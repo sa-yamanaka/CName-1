@@ -109,7 +109,7 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);font-si
 
 <div class="grid">
   <section class="panel">
-    <div class="panel-hd"><h2>ご入力</h2><span class="tag">4項目</span></div>
+    <div class="panel-hd"><h2>ご入力</h2><span class="tag">5項目</span></div>
     <div class="panel-bd">
 
       <div class="field">
@@ -165,6 +165,22 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);font-si
         <p class="hint" id="modeHint"></p>
       </div>
 
+      <div class="field">
+        <label>送金サービス利用時の銀行手数料<span style="display:block;font-weight:400;font-size:11px;color:var(--ink-soft);margin-top:3px;letter-spacing:0">為替スプレッドとは別に、口座間の資金移動そのものにかかる手数料（片道・円）</span></label>
+        <div style="display:flex;gap:10px">
+          <div style="flex:1">
+            <label for="jpFee" style="font-size:11px;font-weight:400;margin-bottom:5px">日本側（振込・出金）</label>
+            <input type="text" id="jpFee" value="330" inputmode="numeric">
+          </div>
+          <div style="flex:1">
+            <label for="localFee" style="font-size:11px;font-weight:400;margin-bottom:5px">現地側（着金・送金）</label>
+            <input type="text" id="localFee" value="0" inputmode="numeric">
+          </div>
+        </div>
+        <p class="hint" id="feeStatusHint"></p>
+        <p class="hint">貴社の口座はこの資金移動の経路には入らない前提で、移動する資金そのものにかかるコストのみを計算します。</p>
+      </div>
+
       <div class="band">
         <h3>この通貨のレート水準（片道・対中値）</h3>
         <div class="scale" id="scale"></div>
@@ -193,8 +209,8 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);font-si
       </div>
       <div id="alertBox"></div>
       <p class="note">
-        為替コストのみの比較です。送金手数料・中継銀行手数料・リフティングチャージは含みません。<br>
-        <b>優遇スプレッドは金融機関ごとに大きく異なります。</b>同じ通貨でも公表値に2倍以上の開きがあるため、本ツールでは幅として表示しています。実額は御社の外国送金計算書でご確認ください。
+        為替スプレッドに加え、送金サービス利用時の口座間の資金移動にかかる銀行手数料（日本側・現地側）を含めて試算しています。一方、いまお使いの銀行送金側の送金手数料・中継銀行手数料・リフティングチャージ（一般に数千円＋15〜25米ドル程度）は含んでいません。実際の差額は、その分さらに大きくなる可能性があります。<br>
+        <b>優遇スプレッドは金融機関ごとに大きく異なります。</b>同じ通貨でも公表値に2倍以上の開きがあるため、本ツールでは幅として表示しています。実額は御社の外国送金計算書でご確認ください。銀行手数料の欄はご入力いただく想定値であり、実測データではありません。
       </p>
       <div class="cta">
         <a class="btn btn-primary" id="consult" href="#">この試算について相談する</a>
@@ -208,7 +224,7 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);font-si
 <footer>
   出典：都市銀行の公表相場（2026年7月31日時点のTTS／TTB）。三井住友銀行の米ドルTTS-TTB差も1米ドルあたり2円（片道1円）であり、都市銀行の建値はほぼ横並びです。優遇スプレッドは、大手証券会社2社が公表している為替スプレッド表を中値で％換算し、その最小値と最大値を幅として表示しています。送金サービスの料率は2026年8月3日に100万円／500万円／1,000万円／5,000万円／1億円の各規模で実測した値です。<br>
   特定の金融機関との優劣を示すものではありません。優遇スプレッドは取引金額・取引内容・お客さまとの関係により個別に決まるため、公表値はあくまで参考です。規制通貨（インドルピー・インドネシアルピア・マレーシアリンギット・タイバーツ等）は個別見積となる旨が各社で明記されています。<br>
-  本試算は情報提供を目的とするもので、特定の金融商品の勧誘や投資判断の助言を行うものではありません。最終的なご判断は御社にてお願いいたします。マレーシアリンギット・ベトナムドンは公表相場に建値がないため、米ドル経由の二重変換として推定しています。
+  本試算は情報提供を目的とするもので、特定の金融商品の勧誘や投資判断の助言を行うものではありません。最終的なご判断は御社にてお願いいたします。マレーシアリンギット・ベトナムドンは公表相場に建値がないため、米ドル経由の二重変換として推定しています。「送金サービス利用時の銀行手数料」欄はご入力いただく想定値です。実測・公表値ではないため、貴社および子会社の口座明細で実額をご確認のうえご入力ください。現地側の対応可否（各通貨の「無料」「要確認」「非対応」の判定）は2026年8月時点のWise公式ヘルプセンター・各国中銀・銀行公表情報に基づく調査結果であり、規制・手数料は改定が頻繁なため、業務適用前に最新情報の再確認を推奨します。メキシコペソ・中国元の現地→日本方向は、2026年8月時点でWiseが送金元としての取り扱いを認めていないため試算対象から除外しています。
 </footer>
 </div>
 
@@ -216,37 +232,53 @@ footer{margin-top:32px;padding-top:16px;border-top:1px solid var(--rule);font-si
 /* pub=公表相場片道% / pLo,pHi=公表されている優遇スプレッドの幅(%) / out,inn=送金サービス実測 */
 const DATA=[
  {c:"IDR",country:"インドネシア",name:"インドネシアルピア",pub:13.483,pLo:2.81,pHi:3.37,
-  out:[0.89,0.85,0.81,0.77,null],inn:[0.65,0.60,0.55,0.52,0.49],outCap:"5,000万円程度"},
+  out:[0.89,0.85,0.81,0.77,null],inn:[0.65,0.60,0.55,0.52,0.49],outCap:"5,000万円程度",
+  revCat:"C",revNote:"法人アカウントからのIDR送金元はWiseの規定で不可（個人は可）。SWIFT非対応のため代替ルートも組みにくく、現地→日本はWiseでは非対応と考えるべきです。"},
  {c:"MXN",country:"メキシコ",name:"メキシコペソ",pub:10.787,pLo:0.65,pHi:1.62,
-  out:[0.92,0.89,0.84,0.81,0.79],inn:[1.43,null,null,null,null],innCap:"10万メキシコペソ（約160万円）"},
+  out:[0.92,0.89,0.84,0.81,0.79],inn:[null,null,null,null,null],innCap:"10万メキシコペソ（約160万円）",
+  revCat:"C",revNote:"Wiseは2025年10月1日付でMXNの送金元（from MXN）取り扱いを停止しました。以前の実測値は現在無効なため試算対象から外しています。"},
  {c:"INR",country:"インド",name:"インドルピー",pub:8.876,pLo:2.37,pHi:2.37,
-  out:[0.84,0.81,0.77,0.73,0.71],inn:[null,null,null,null,null]},
+  out:[0.84,0.81,0.77,0.73,0.71],inn:[null,null,null,null,null],
+  revCat:"C",revNote:"法人口座からのINR送金元はWiseの規定で不可。投資・寄付目的の受取も不可です。"},
  {c:"PHP",country:"フィリピン",name:"フィリピンペソ",pub:5.344,pLo:null,pHi:null,
-  out:[0.99,0.95,0.91,0.88,0.86],inn:[0.54,0.39,0.37,null,null],innCap:"1,000万円程度"},
+  out:[0.99,0.95,0.91,0.88,0.86],inn:[0.54,0.39,0.37,null,null],innCap:"1,000万円程度",
+  revCat:"A",revNote:"法人アカウントからの送金元に制限なし。InstaPay/PESONetはBSP Circular No.1238（2026年7月施行）により主要行で無料化が進行中です。"},
  {c:"TRY",country:"トルコ",name:"トルコリラ",pub:17.699,pLo:7.37,pHi:8.85,
-  out:[0.79,0.69,0.65,null,null],inn:[0.59,0.53,0.48,null,null],outCap:"1,000万円程度",innCap:"1,000万円程度"},
+  out:[0.79,0.69,0.65,null,null],inn:[0.59,0.53,0.48,null,null],outCap:"1,000万円程度",innCap:"1,000万円程度",
+  revCat:"A",revNote:"Türkiye登記法人からの送金元のみ対応（現地子会社が対象であれば通常問題ありません）。FAST/EFTは主要行で無料です。"},
  {c:"ZAR",country:"南アフリカ",name:"南アフリカランド",pub:15.400,pLo:1.03,pHi:2.05,
-  out:[0.90,0.83,0.79,0.75,0.73],inn:[null,null,null,null,null]},
+  out:[0.90,0.83,0.79,0.75,0.73],inn:[null,null,null,null,null],
+  revCat:"C",revNote:"ZARは送金先専用（from ZAR不可）です。"},
  {c:"VND",country:"ベトナム",name:"ベトナムドン",pub:2.62,pLo:null,pHi:null,
-  out:[0.97,null,null,null,null],inn:[null,null,null,null,null],outCap:"100万円程度",est:true},
+  out:[0.97,null,null,null,null],inn:[null,null,null,null,null],outCap:"100万円程度",est:true,
+  revCat:"B",revNote:"現地銀行からWiseへの直接チャージは不可。Wise残高からの送出のみ対応のため、実務上の資金移動ルートを個別にご確認ください。"},
  {c:"MYR",country:"マレーシア",name:"マレーシアリンギット",pub:2.02,pLo:1.16,pHi:1.16,
-  out:[0.76,0.73,0.69,0.65,0.63],inn:[0.70,0.64,0.60,0.57,0.55],est:true},
+  out:[0.76,0.73,0.69,0.65,0.63],inn:[0.70,0.64,0.60,0.57,0.55],est:true,
+  revCat:"B",revNote:"法人の現地銀行からWiseへの直接チャージは不可。Wise残高経由でのみ送出可能なため、実現ルートを個別にご確認ください（下の実測値は残高経由を前提とした参考値です）。"},
  {c:"THB",country:"タイ",name:"タイバーツ",pub:1.663,pLo:1.46,pHi:1.46,
-  out:[1.02,0.98,null,null,null],inn:[null,null,null,null,null],outCap:"500万円程度"},
+  out:[1.02,0.98,null,null,null],inn:[null,null,null,null,null],outCap:"500万円程度",
+  revCat:"C",revNote:"法人からの送金元は現時点で不透明。2026年にタイ中銀規制対応で仕様変更が進行中です。"},
  {c:"KRW",country:"韓国",name:"韓国ウォン",pub:1.783,pLo:null,pHi:null,
-  out:[1.00,0.95,0.91,0.87,0.85],inn:[null,null,null,null,null]},
+  out:[1.00,0.95,0.91,0.87,0.85],inn:[null,null,null,null,null],
+  revCat:"C",revNote:"KRWは送金先専用（from KRW不可）です。"},
  {c:"CNY",country:"中国",name:"中国元",pub:1.260,pLo:0.76,pHi:0.84,
-  out:[1.30,null,null,null,null],inn:[0.72,0.65,null,null,null],outCap:"100万円程度",innCap:"500万円程度"},
+  out:[1.30,null,null,null,null],inn:[null,null,null,null,null],outCap:"100万円程度",
+  revCat:"C",revNote:"CNYは実質的に送金先専用（from CNY不可）。受取も本土のCIPS加盟法人口座に限定され契約書・インボイス提示が必要です。以前の実測値は現在無効なため試算対象から外しています。"},
  {c:"GBP",country:"英国",name:"英ポンド",pub:1.849,pLo:0.23,pHi:0.23,
-  out:[0.75,0.72,0.68,0.64,0.62],inn:[0.43,0.39,0.34,0.31,0.28]},
+  out:[0.75,0.72,0.68,0.64,0.62],inn:[0.43,0.39,0.34,0.31,0.28],
+  revCat:"A",revNote:"法人アカウントからの送金元に制限なし。Faster Paymentsは無料です。"},
  {c:"AUD",country:"オーストラリア",name:"豪ドル",pub:1.770,pLo:0.35,pHi:0.44,
-  out:[0.71,0.67,0.63,0.59,0.57],inn:[0.45,0.41,0.36,0.33,0.30]},
+  out:[0.71,0.67,0.63,0.59,0.57],inn:[0.45,0.41,0.36,0.33,0.30],
+  revCat:"A",revNote:"法人アカウントからの送金元に制限なし。NPP/Oskoは無料です。"},
  {c:"SGD",country:"シンガポール",name:"シンガポールドル",pub:0.663,pLo:0.32,pHi:0.32,
-  out:[0.73,0.69,0.65,0.61,0.59],inn:[0.30,0.26,0.21,0.18,0.15]},
+  out:[0.73,0.69,0.65,0.61,0.59],inn:[0.30,0.26,0.21,0.18,0.15],
+  revCat:"A",revNote:"法人アカウントからの送金元に制限なし。FAST/PayNowは無料です。"},
  {c:"EUR",country:"欧州",name:"ユーロ",pub:0.810,pLo:0.19,pHi:0.19,
-  out:[0.71,0.68,0.64,0.60,0.58],inn:[0.55,0.50,0.45,0.42,0.39]},
+  out:[0.71,0.68,0.64,0.60,0.58],inn:[0.55,0.50,0.45,0.42,0.39],
+  revCat:"A",revNote:"法人アカウントからの送金元に制限なし。SEPAは無料です。"},
  {c:"USD",country:"アメリカ",name:"米ドル",pub:0.622,pLo:0.16,pHi:0.16,
-  out:[0.75,0.71,0.67,0.63,0.61],inn:[0.49,0.37,0.31,0.27,0.25]},
+  out:[0.75,0.71,0.67,0.63,0.61],inn:[0.49,0.37,0.31,0.27,0.25],
+  revCat:"A",revNote:"法人アカウントからの送金元に制限なし。ACHは無料です。"},
 ];
 const AMTS=[1e6,5e6,1e7,5e7,1e8], AMTL=["100万円","500万円","1,000万円","5,000万円","1億円"];
 const $=id=>document.getElementById(id), yen=n=>Math.round(n).toLocaleString("ja-JP");
@@ -258,8 +290,38 @@ sel.value=0;
 document.querySelectorAll("#presets button").forEach(b=>b.addEventListener("click",()=>{
   ai=+b.dataset.i;document.querySelectorAll("#presets button").forEach(x=>x.setAttribute("aria-pressed",x===b));calc();}));
 document.querySelectorAll("#dir button").forEach(b=>b.addEventListener("click",()=>{
-  dir=b.dataset.d;document.querySelectorAll("#dir button").forEach(x=>x.setAttribute("aria-pressed",x===b));calc();}));
-["ccy","times","mode","cval"].forEach(id=>$(id).addEventListener(id==="cval"?"input":"change",calc));
+  dir=b.dataset.d;document.querySelectorAll("#dir button").forEach(x=>x.setAttribute("aria-pressed",x===b));feeGuidance(true);calc();}));
+$("ccy").addEventListener("change",()=>{feeGuidance(true);calc();});
+["times","mode","cval","jpFee","localFee"].forEach(id=>$(id).addEventListener(["cval","jpFee","localFee"].includes(id)?"input":"change",calc));
+
+function legFee(type){
+  const j=parseFloat($("jpFee").value.replace(/[^\d.]/g,""))||0;
+  const l=type==="out"?0:(parseFloat($("localFee").value.replace(/[^\d.]/g,""))||0);
+  return j+l;
+}
+
+function feeGuidance(reset){
+  const d=DATA[+sel.value], lf=$("localFee");
+  if(dir==="out"){
+    lf.disabled=true; lf.value="0";
+    $("feeStatusHint").innerHTML=`<b style="color:var(--moss)">現地側は入力不要です。</b>Wiseは現地の国内送金網で払い出すため、受取側の被仕向手数料は原則ゼロです（2026年8月調査）。`;
+    return;
+  }
+  lf.disabled=false;
+  const cat=d.revCat, note=d.revNote||"";
+  if(cat==="A"){
+    if(reset) lf.value="0";
+    $("feeStatusHint").innerHTML=`<b style="color:var(--moss)">現地側も無料が基本です。</b>${note}`;
+  }else if(cat==="B"){
+    if(reset) lf.value="0";
+    $("feeStatusHint").innerHTML=`<b style="color:var(--amber)">要確認：直接チャージ不可。</b>${note}`;
+  }else if(cat==="C"){
+    if(reset) lf.value="0";
+    $("feeStatusHint").innerHTML=`<b style="color:var(--shu)">この向きはWiseで組めません。</b>${note} 別ルートを使う場合はその手数料を入力してください。`;
+  }else{
+    $("feeStatusHint").innerHTML="";
+  }
+}
 
 function myRate(d){
   const m=$("mode").value;
@@ -293,10 +355,11 @@ function calc(){
   $("ccyTag").textContent=`${d.country} / ${d.c}`;
   $("modeHint").textContent = $("mode").value==="custom" ? ""
     : (d.pLo!==null ? `この通貨の優遇スプレッド公表値は ${d.pLo.toFixed(2)}〜${d.pHi.toFixed(2)}%（金融機関により異なります）` : "この通貨は優遇スプレッドの公表値が見当たりません。実額でのご確認をおすすめします。");
+  feeGuidance(false);
 
-  const legs = dir==="out"?[{w:d.out[ai],n:"日本 → 現地",cap:d.outCap}]
-             : dir==="in"?[{w:d.inn[ai],n:"現地 → 日本",cap:d.innCap}]
-             : [{w:d.out[ai],n:"往路 日本 → 現地",cap:d.outCap},{w:d.inn[ai],n:"復路 現地 → 日本",cap:d.innCap}];
+  const legs = dir==="out"?[{w:d.out[ai],n:"日本 → 現地",cap:d.outCap,type:"out"}]
+             : dir==="in"?[{w:d.inn[ai],n:"現地 → 日本",cap:d.innCap,type:"in"}]
+             : [{w:d.out[ai],n:"往路 日本 → 現地",cap:d.outCap,type:"out"},{w:d.inn[ai],n:"復路 現地 → 日本",cap:d.innCap,type:"in"}];
   drawBand(d,r.p,legs[0].w);
 
   const gb=$("gapBox"); gb.className="gap"; let al="";
@@ -308,21 +371,23 @@ function calc(){
     if(r.p===null){ $("gapSub").textContent=r.l; }
     else{
       const cap=na.find(l=>l.cap), never=d.inn.every(v=>v===null)&&dir!=="out";
-      $("gapSub").textContent=never?`${d.name}は、この送金サービスで現地発の送金を取り扱っていません。`
+      const revMsg = never&&d.revNote ? d.revNote : `${d.name}は、この送金サービスで現地発の送金を取り扱っていません。`;
+      $("gapSub").textContent=never?revMsg
         :`${d.name}はこの金額規模を超えています。上限の目安は${cap?cap.cap:"より小さい金額"}です。`;
-      al=never?`<div class="alert"><b>この向きでは取り扱いがありません</b>${d.name}は通貨規制等により、現地発の送金がこのサービスで扱えません。法人向けの別サービスで対応できる場合がありますので、ご相談ください。</div>`
+      al=never?`<div class="alert"><b>この向きでは取り扱いがありません</b>${revMsg}</div>`
         :`<div class="alert"><b>1回あたりの上限を超えています</b>上限の目安は${cap?cap.cap:"より小さい金額"}です。金額を下げるか回数を分けることで対応できます。分割が難しい場合は別の方法をご案内します。</div>`;
     }
     $("alertBox").innerHTML=al; setLink(d,r,0); return;
   }
 
-  let nowT=0,altT=0,html="";
-  legs.forEach(l=>{const nc=A*r.p/100*N, ac=A*l.w/100*N; nowT+=nc; altT+=ac;
+  let nowT=0,altT=0,feeT=0,html="";
+  legs.forEach(l=>{const nc=A*r.p/100*N, fc=legFee(l.type)*N, ac=A*l.w/100*N+fc; nowT+=nc; altT+=ac; feeT+=fc;
     if(legs.length>1) html+=`<div class="rline sub"><div class="l">${l.n}</div><div class="v num">${yen(nc-ac)} 円</div></div>`;});
   const gap=nowT-altT;
   $("lines").innerHTML=
     `<div class="rline now"><div class="l">いまの為替コスト<small>${r.l}・${r.p.toFixed(2)}%</small></div><div class="v num">${yen(nowT)} 円</div></div>`+
-    `<div class="rline alt"><div class="l">送金サービスを使った場合<small>${AMTL[ai]} × 年${N}回で実測</small></div><div class="v num">${yen(altT)} 円</div></div>`+html;
+    `<div class="rline alt"><div class="l">送金サービスを使った場合<small>${AMTL[ai]} × 年${N}回で実測</small></div><div class="v num">${yen(altT)} 円</div></div>`+
+    (feeT>0?`<div class="rline sub"><div class="l">うち銀行手数料<small>年${N}回${legs.length>1?"× 往復2方向":""}</small></div><div class="v num">${yen(feeT)} 円</div></div>`:``)+html;
   $("gapVal").innerHTML=(gap>=0?"":"−")+yen(Math.abs(gap))+'<span>円</span>';
 
   if(gap>0){
@@ -339,14 +404,16 @@ function calc(){
     al+=`<div class="alert info"><b>実額でのご確認をおすすめします</b>優遇スプレッドは金融機関により2倍以上の開きがあります。御社の実レートを入力いただくと、この試算がそのまま実額になります。</div>`;
   if(d.est) al+=`<div class="alert warn"><b>推定値です</b>${d.name}は公表相場に建値がなく、米ドル経由の二重変換として推定しています。</div>`;
   if(dir==="both") al+=`<div class="alert warn"><b>双方向の前提</b>選んだ金額が往路・復路それぞれ発生するものとして計算しています。</div>`;
+  if(dir!=="out"&&d.revCat==="B") al+=`<div class="alert warn"><b>現地→日本の資金移動ルートをご確認ください</b>${d.revNote}</div>`;
   $("alertBox").innerHTML=al; setLink(d,r,gap);
 }
 
 function setLink(d,r,gap){
   const dl={out:"日本→現地",in:"現地→日本",both:"双方向"}[dir], N=$("times").value;
   const s=encodeURIComponent(`送金コストの相談（${d.country}・${dl}・${AMTL[ai]}×年${N}回）`);
+  const j=parseFloat($("jpFee").value.replace(/[^\d.]/g,""))||0, l=parseFloat($("localFee").value.replace(/[^\d.]/g,""))||0;
   const b=encodeURIComponent(`試算条件\n送金先：${d.country}（${d.name}）\n向き：${dl}\n1回あたり：${AMTL[ai]}\n年間回数：${N}回\n`+
-    `現在のレート：${r.l}${r.p!==null?`（${r.p.toFixed(2)}%）`:""}\n試算差額：${yen(gap)} 円 / 年\n\n——————————\n御社名：\nご担当者名：\nご連絡先：\nご相談内容：\n`);
+    `現在のレート：${r.l}${r.p!==null?`（${r.p.toFixed(2)}%）`:""}\n銀行手数料（片道・想定値）：日本側 ${yen(j)} 円／現地側 ${yen(l)} 円\n試算差額：${yen(gap)} 円 / 年\n\n——————————\n御社名：\nご担当者名：\nご連絡先：\nご相談内容：\n`);
   $("consult").href=`mailto:REPLACE@example.com?subject=${s}&body=${b}`;
 }
 $("copyBtn").addEventListener("click",()=>{
