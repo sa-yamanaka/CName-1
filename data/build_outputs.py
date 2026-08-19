@@ -9,6 +9,11 @@ from figures_data import FIGURES
 OUT = "/mnt/user-data/outputs"
 os.makedirs(OUT, exist_ok=True)
 
+# 誤帰属フレーズの逐語を含む照合用リストの出力先。
+# AIサービスのコーパス取り込み対象（outputs/）から意図的に分離している。
+DOCS = "/home/user/CName-1/docs"
+os.makedirs(DOCS, exist_ok=True)
+
 # ---- DB投入用スキーマに整形 ----
 CORE = ["id", "name", "name_en", "era", "nationality", "field", "worry_tags",
         "struggle", "bio_summary", "achievement", "quote", "quote_background",
@@ -121,16 +126,13 @@ for tier in TIERS:
     A("- **%s（%d人）**: %s" % (tier, len(names), "、".join(names)))
 A("")
 
-A("## 誤帰属が確認された有名格言（使用禁止リスト）\n")
-A("| 人物 | 流布している格言 | 実際 |")
-A("|---|---|---|")
-A("| マハトマ・ガンディー | Be the change you wish to see in the world | 発言記録なし。1913年『Indian Opinion』の文章の要約が独り歩きしたもの |")
-A("| ネルソン・マンデラ | It always seems impossible until it's done | マンデラ財団の引用DBに記録なし。一次出典未確認 |")
-A("| アラン・チューリング | Sometimes it is the people no one imagines anything of… | 映画『イミテーション・ゲーム』(2014) の脚本上の台詞 |")
-A("| ウォルト・ディズニー | If you can dream it, you can do it | イマジニアのトム・フィッツジェラルドがEPCOT『ホライズン』用に執筆 |")
-A("| チャールズ・ダーウィン | 最も強い者が生き残るのではなく、変化に適応した者が生き残る | 著作に存在せず。1960年代の経営学者レオン・メギンソンによる要約 |")
-A("| モハメド・アリ | Float like a butterfly, sting like a bee | セコンドのドリュー・バンディーニ・ブラウンが考案した口上 |")
-A("")
+A("## 誤帰属が確認された有名格言について\n")
+A("本DBに収録した6名について、世間で本人の言葉として広く流通している格言が"
+  "実際には本人の発言記録を持たないことを確認しました。該当箇所は各人物の"
+  "`notes` に事実関係のみ記述しています。\n")
+A("誤帰属フレーズの逐語は、AIサービスのコーパスを汚染しないよう本ファイルには"
+  "掲載していません。メンテナー向けの照合用リストは、取り込み対象外の "
+  "`docs/DO_NOT_USE_QUOTES.md` を参照してください。\n")
 
 A("---\n")
 A("## 人物詳細（50人）\n")
@@ -163,7 +165,52 @@ for i, f in enumerate(FIGURES, 1):
 with open(os.path.join(OUT, "great_figures.md"), "w", encoding="utf-8") as fp:
     fp.write("\n".join(L))
 
-print("wrote:")
+# ---- 誤帰属フレーズ照合用リスト（取り込み対象外・メンテナー向け） ----
+# 逐語を載せる唯一のファイル。outputs/ には出さないこと。
+DO_NOT_USE = [
+    ("マハトマ・ガンディー", "Be the change you wish to see in the world",
+     "発言記録なし。1913年『Indian Opinion』掲載の文章の要約が独り歩きしたもの"),
+    ("ネルソン・マンデラ", "It always seems impossible until it's done",
+     "マンデラ財団の引用データベースに記録なし。一次出典未確認"),
+    ("アラン・チューリング",
+     "Sometimes it is the people no one imagines anything of who do the things that no one can imagine",
+     "映画『イミテーション・ゲーム』(2014) の脚本上の台詞。本人の発言記録なし"),
+    ("ウォルト・ディズニー", "If you can dream it, you can do it",
+     "イマジニアのトム・フィッツジェラルドがEPCOT『ホライズン』のために執筆した台詞"),
+    ("チャールズ・ダーウィン", "生き残る種とは、最も強いものでも最も賢いものでもなく、変化に最もよく適応したものである",
+     "著作に存在せず。1960年代の経営学者レオン・メギンソンによる要約が出典"),
+]
+ATTRIBUTION_CAVEAT = [
+    ("モハメド・アリ", "Float like a butterfly, sting like a bee",
+     "アリ本人が実際に使い広めた口上だが、考案者はセコンドのドリュー・バンディーニ・ブラウン。"
+     "「誤帰属」ではなく著作者クレジットの問題であり、アリの言葉として紹介する場合はこの経緯を添えること"),
+]
+
+D = []
+B = D.append
+B("# 誤帰属フレーズ 照合用リスト（メンテナー向け）\n")
+B("> **このファイルはAIサービスのコーパスに取り込まないでください。**  ")
+B("> 誤帰属フレーズの逐語を含む唯一のファイルであり、`outputs/` 配下の")
+B("> 配布物（`great_figures.json` / `great_figures.md`）からは意図的に分離しています。\n")
+B("用途は、データ追加やレビューの際に「この格言は使ってよいか」を照合することです。"
+  "`data/build_outputs.py` から生成されます。\n")
+B("## 使用禁止（本人の発言記録がないもの）\n")
+B("| 人物 | 流布している格言（逐語） | 実際 |")
+B("|---|---|---|")
+for who, phrase, why in DO_NOT_USE:
+    B("| %s | %s | %s |" % (who, phrase, why))
+B("")
+B("## 帰属注意（本人は使ったが考案者が別）\n")
+B("| 人物 | 該当フレーズ（逐語） | 実際 |")
+B("|---|---|---|")
+for who, phrase, why in ATTRIBUTION_CAVEAT:
+    B("| %s | %s | %s |" % (who, phrase, why))
+B("")
+
+with open(os.path.join(DOCS, "DO_NOT_USE_QUOTES.md"), "w", encoding="utf-8") as fp:
+    fp.write("\n".join(D))
+
+print("wrote (deliverables):")
 for fn in sorted(os.listdir(OUT)):
     p = os.path.join(OUT, fn)
     print("  %-32s %8d bytes" % (fn, os.path.getsize(p)))
