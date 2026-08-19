@@ -24,10 +24,24 @@
          - famous  : 超有名 → 知る人ぞ知る → マイナー
          - hidden  : マイナー → 知る人ぞ知る → 超有名
          - neutral : tier で差をつけない（4. のid順に委ねる）
-       モードは JST の日付文字列の SHA-256 を 3 で割った余りで決まる。
-       Python 組み込みの hash() はプロセスごとに変わる（PYTHONHASHSEED）ため
-       使わず、hashlib を用いて日付が同じなら常に同じモードになるようにしている。
-    4. id 昇順（最終的な決定打。実行ごとの揺れをなくす）
+       モードは EPOCH からの経過日数を 3 で割った余りで巡回する
+       （famous → hidden → neutral → famous …）。
+       連続する日は必ず別のモードになる。
+    4. id 昇順（グループ内の基準順序）
+
+== 同点集団内の日替わり巡回シフト ==
+    1〜4 で並べたあと、「類似度・出典ステータス・fame_tierランクがすべて同じ」
+    人物の集団（= どう並べても上位ルール上は等価な集団）に対して、
+    集団内だけを巡回シフトする。これにより表示件数より大きい同点集団から、
+    日によって異なる人物が表示される。
+    ソート順（1〜3）そのものは変えず、集団の内部順序だけを回す。
+
+    シフト量には epoch_days // 3、すなわち「そのモードが何巡目か」を使う。
+    epoch_days をそのまま使うと 3日周期のモード巡回と共振し、
+    たとえばサイズ3の集団では1通り、サイズ6の集団では2通りの
+    ウィンドウしか現れない（モードが出る日は epoch_days が 3 で割った
+    余りが固定されるため）。// 3 を挟むと、そのモードが巡ってくるたびに
+    シフトが 1 ずつ進み、集団の全メンバーが順に露出する。
 
 == スコアと同点に関する注意 ==
     本DBの50人は全員ちょうど2タグを持つため、人物ベクトルのノルムは
@@ -35,16 +49,12 @@
     「その人物の2タグに対応する入力強度の単純合計」と数学的に等価であり、
     現時点では正規化はスコアを 0〜1 に収める役割しか果たしていない。
     さらに50人が18種類のタグ集合しか持たないため同点が多発する
-    （例: 「孤独 + 怒り」は8人が完全に同スコア）。上記2〜4はその同点集団を
-    どう並べるかのルールである。
-
-    なお 3. のローテーションは「日ごとに3通りの並びを切り替える」ものであり、
-    同じ入力に対する上位N人は3パターンに限られる。真に日替わりで多様な人物を
-    出したい場合は、同点集団からの巡回選択など別の仕組みが必要になる。
+    （例: 「孤独 + 怒り」は8人が完全に同スコア）。上記2〜4と巡回シフトは、
+    その同点集団をどう並べ、どこを切り出すかのルールである。
 """
 import sys
 import math
-import hashlib
+import itertools
 import argparse
 import datetime
 from collections import Counter
@@ -60,6 +70,10 @@ MIN_LEVEL, MAX_LEVEL = 0, 3
 
 # 日本向けサービスを想定し、日付は JST で判定する
 JST = datetime.timezone(datetime.timedelta(hours=9))
+
+# ローテーションの起点。ここからの経過日数で mode と巡回シフトを決める。
+# 値そのものに意味はないが、変更すると全ユーザーの当日の並びが変わる。
+EPOCH = datetime.date(2026, 1, 1)
 
 # タイブレーク2: 出典ステータスの優先順（小さいほど上位）
 STATUS_RANK = {"検証済": 0, "要確認": 1, "誤帰属": 2}
@@ -98,13 +112,28 @@ def today_jst():
     return datetime.datetime.now(JST).date()
 
 
+def epoch_days(day):
+    """EPOCH からの経過日数。EPOCH より前の日付は負になる。"""
+    return (day - EPOCH).days
+
+
 def rotation_for_date(day):
     """日付から fame_tier ローテーションのモードを決める。
 
-    同じ日付なら常に同じモードを返す（プロセスをまたいでも不変）。
+    経過日数 mod 3 の巡回。連続する日は必ず別のモードになる。
+    Python の % は負数でも非負を返すため、EPOCH 以前の日付でも正しく巡回する。
     """
-    digest = hashlib.sha256(day.isoformat().encode("utf-8")).hexdigest()
-    return ROTATIONS[int(digest, 16) % len(ROTATIONS)]
+    return ROTATIONS[epoch_days(day) % len(ROTATIONS)]
+
+
+def tie_shift_index(day):
+    """同点集団内の巡回シフト量の元になる値。
+
+    「そのモードが何巡目に来たか」に相当する。epoch_days をそのまま使うと
+    3日周期のモード巡回と共振してシフトが一部の値しか取らないため、
+    len(ROTATIONS) で割ってから使う（詳細はモジュール docstring 参照）。
+    """
+    return epoch_days(day) // len(ROTATIONS)
 
 
 def to_vector(scores):
@@ -151,21 +180,49 @@ def sort_key(score, figure, mode):
     )
 
 
-def match(scores, top_n=3, mode=None):
+def equivalence_key(score, figure, mode):
+    """並び順ルール上どう並べても等価な集団を識別するキー（id を除いた部分）。"""
+    return (
+        round(score, 9),
+        STATUS_RANK.get(figure.get("quote_source_status"), STATUS_FALLBACK),
+        FAME_RANK[mode].get(figure.get("fame_tier"), FAME_FALLBACK),
+    )
+
+
+def rotate_ties(scored, mode, shift):
+    """等価な集団ごとに内部順序だけを巡回シフトする。
+
+    集団の境界（= 1〜3のソート順）は動かさないため、上位ルールは保たれる。
+    """
+    rotated = []
+    for _, group in itertools.groupby(
+            scored, key=lambda r: equivalence_key(r[0], r[1], mode)):
+        members = list(group)
+        if len(members) > 1:
+            offset = shift % len(members)
+            members = members[offset:] + members[:offset]
+        rotated.extend(members)
+    return rotated
+
+
+def match(scores, top_n=3, mode=None, day=None):
     """入力ベクトルに近い人物を上位 top_n 件返す。
 
-    mode を省略した場合は JST の当日からローテーションを決める。
+    mode / day を省略した場合は JST の当日から決める。
     戻り値: [(similarity, figure, tied_total), ...]
     tied_total は同じ類似度を持つ人物の総数（同点集団の大きさ）。
     """
+    if day is None:
+        day = today_jst()
     if mode is None:
-        mode = rotation_for_date(today_jst())
+        mode = rotation_for_date(day)
     if mode not in FAME_RANK:
         raise ValueError("未知のローテーション: %s" % mode)
 
     query = to_vector(scores)
     scored = [(cosine(query, figure_vector(f)), f) for f in FIGURES]
     scored.sort(key=lambda r: sort_key(r[0], r[1], mode))
+    scored = rotate_ties(scored, mode, tie_shift_index(day))
 
     # スコアは浮動小数なので丸めてから同点数を数える
     tie_count = Counter(round(s, 9) for s, _ in scored)
@@ -179,7 +236,7 @@ def format_query(scores):
     return "、".join("%s=%d" % (t, v) for t, v in active)
 
 
-def print_results(scores, top_n=3, mode=None, label=None):
+def print_results(scores, top_n=3, mode=None, day=None, label=None):
     if label:
         print("■ %s" % label)
     print("  入力: %s" % format_query(scores))
@@ -189,7 +246,7 @@ def print_results(scores, top_n=3, mode=None, label=None):
         return
 
     print()
-    for rank, (score, fig, tied) in enumerate(match(scores, top_n, mode), 1):
+    for rank, (score, fig, tied) in enumerate(match(scores, top_n, mode, day), 1):
         tie_note = "  ※同点%d人中" % tied if tied > 1 else ""
         status = fig.get("quote_source_status", "")
         warn = "  ⚠ 出典未特定" if status == "要確認" else ""
@@ -207,9 +264,12 @@ def print_header(day, mode):
     print("感情ベクトル → 偉人マッチング プロトタイプ")
     print("対象: %d人 / タグ7軸 / 強度 %d〜%d"
           % (len(FIGURES), MIN_LEVEL, MAX_LEVEL))
-    print("日付: %s（JST） / ローテーション: %s — %s"
-          % (day.isoformat(), mode, ROTATION_LABEL[mode]))
+    print("日付: %s（JST） / 経過日数 %d / ローテーション: %s — %s"
+          % (day.isoformat(), epoch_days(day), mode, ROTATION_LABEL[mode]))
+    print("  （起点 %s から mod %d の巡回。連続する日は必ず別モード）"
+          % (EPOCH.isoformat(), len(ROTATIONS)))
     print("同点の並び: 出典ステータス（検証済>要確認） → fame_tier → id")
+    print("同点集団の巡回シフト量: %d（そのモードの巡回回数）" % tie_shift_index(day))
     print("=" * 72)
     print()
 
@@ -217,7 +277,7 @@ def print_header(day, mode):
 def run_presets(top_n, mode, day):
     print_header(day, mode)
     for label, scores in TEST_PATTERNS:
-        print_results(scores, top_n, mode, label)
+        print_results(scores, top_n, mode, day, label)
         print("-" * 72)
         print()
 
@@ -256,7 +316,7 @@ def run_interactive(top_n, mode, day):
                 return
             scores[tag] = level
         print()
-        print_results(scores, top_n, mode, label="入力したベクトル")
+        print_results(scores, top_n, mode, day, label="入力したベクトル")
         print("-" * 72)
 
 
