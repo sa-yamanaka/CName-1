@@ -6,44 +6,54 @@
     python3 data/prototype_match.py                    # テストパターンを一括実行
     python3 data/prototype_match.py -i                 # 対話モード
     python3 data/prototype_match.py -n 5               # 上位5人まで表示（既定は3）
+    python3 data/prototype_match.py --pool 20          # プールを類似度上位20人に
     python3 data/prototype_match.py --date 2026-08-20  # 日付を固定して実行（テスト用）
     python3 data/prototype_match.py --rotation hidden  # 表示順のtier優先を変更
-    python3 data/prototype_match.py --simulate 30      # 30日間の被り頻度を集計
+    python3 data/prototype_match.py --simulate 30      # 単一Nでの被り頻度を集計
+    python3 data/prototype_match.py --compare 30       # シナリオ×N のマトリクス
 
 仕組み:
     - 入力  : 7タグそれぞれに 0〜3 の強度を持つベクトル
-    - 人物  : worry_tags を同じ7次元の one-hot ベクトルに変換
-    - 照合  : コサイン類似度でプールを作り、日替わりで K 人を選出
+    - 人物  : worry_tags を重み付き7次元ベクトルに変換（主軸=2 / 副軸=1）
+    - 照合  : コサイン類似度の上位N人をプールとし、日替わりで K 人を選出
+
+== 人物ベクトルの重み付け ==
+    worry_tags の並び順を主軸→副軸とみなし、TAG_WEIGHTS = [2, 1] を割り当てる。
+    従来のバイナリ(1/1)では順不同のタグ集合18種類しか区別できなかったが、
+    重み付けにより順序を区別した24種類まで解像度が上がる。
+
+    【注意】figures_data.py の worry_tags は、主軸/副軸を意識して並べたもの
+    ではない。重みは「1番目のタグが主」という前提に依存するため、
+    本番採用するなら各人物のタグ順を主軸基準で見直す必要がある。
 
 == 選出（誰を出すか）==
-    「かぶりたくない」の基準を “同一入力で特定の人物が30日間に上位K人へ
-    入る回数を1〜2回以内に抑える” と定義し直したことに伴い、
-    fame_tier による3モード（famous / hidden / neutral）での絞り込みは撤廃した。
+    fame_tier も quote_source_status も選出には一切関与しない。
 
-    1. 類似度スコアが完全に同一の人物をひとつのプールとする
-       （fame_tier も quote_source_status も選出には一切影響しない）
-    2. スコアの高いプールから順に、start = epoch_days % pool_size を起点として
-       K人を円環的に取り出す
-    3. プールがK人に満たない場合は全員を採用し、残り枠を次のプールから
-       同じ方法で埋める
-
-    start が経過日数そのものなので、プールサイズと互いに素かどうかに関わらず
-    日ごとに1ずつ進み、プール全体を均等に巡回する。
+    1. 全50人を類似度降順に並べ、上位 N 人をプールとする
+       （旧実装の「スコアが完全一致する同点集団」ではない）
+    2. start = epoch_days % N を起点に K 人を円環的に取り出す
+    3. プールが K 人未満なら全員
 
 == 表示順（選ばれたK人をどう並べるか）==
     選出とは独立に、その日のK人だけを次の優先順で並べ替える。
-    並べ替えは誰が選ばれるかには一切影響しない。
     1. quote_source_status: 検証済 > 要確認 > 誤帰属
     2. fame_tier: 既定は「超有名 → 知る人ぞ知る → マイナー」
-       --rotation で hidden（マイナー優先）/ neutral（tierを見ない）に変更可
+       --rotation で hidden / neutral に変更可
     3. id 昇順
 
 == 被り頻度についての注意 ==
-    1人あたりの30日間の期待出現回数は 30 * K / pool_size である。
-    K=3 で2回以内に収めるにはプールが45人必要だが、本DBの50人は
-    18種類のタグ集合しか持たず、同一スコアのプールは最大8人しかない。
-    したがって現在のデータ構造では、この基準は原理的に達成できない。
-    実測値は --simulate で確認できる。
+    1人あたりの平均出現回数は days * K / N まで下げられるが、
+    **最大**出現回数は N を増やしても 3 で下げ止まる（K=3・30日の場合）。
+    start が日ごとに1ずつ進むため、各人物は「K日連続で出続けてから
+    長期間出ない」という露出のしかたになり、その連続K日が集計期間に
+    入った人物が必ず K 回出るためである。
+
+    さらに step=1 では 30日間に現れる start が30通りしかないため、
+    N > 32 のプール後半は30日間で一度も表示されない。
+
+    step を K にして窓を重ねない方式に変えると、N>=45 で最大2回に収まる
+    （実測済み）。この変更は select_for_day の offset 計算1行で済むが、
+    仕様変更にあたるため本コミットでは行っていない。
 """
 import sys
 import math
@@ -60,6 +70,13 @@ TAGS = ["喜び／期待", "悲しみ", "怒り", "不安・恐れ", "疲労・�
 TAG_INDEX = {t: i for i, t in enumerate(TAGS)}
 
 MIN_LEVEL, MAX_LEVEL = 0, 3
+
+# worry_tags の並び順に対応する重み（主軸=2、副軸=1）
+TAG_WEIGHTS = [2.0, 1.0]
+
+# プール = 類似度上位N人。N の比較検証用候補と既定値。
+POOL_SIZE_CANDIDATES = [10, 15, 20, 25, 30, 35, 40, 45]
+DEFAULT_POOL_SIZE = 10
 
 # 日本向けサービスを想定し、日付は JST で判定する
 JST = datetime.timezone(datetime.timedelta(hours=9))
@@ -126,10 +143,15 @@ def to_vector(scores):
 
 
 def figure_vector(figure):
-    """人物の worry_tags を one-hot ベクトルへ。"""
+    """人物の worry_tags を重み付き7次元ベクトルへ。
+
+    worry_tags の並び順を主軸→副軸とみなし、TAG_WEIGHTS の重みを割り当てる
+    （主軸=2、副軸=1）。3個目以降があれば末尾の重みを流用する。
+    """
     vec = [0.0] * len(TAGS)
-    for tag in figure["worry_tags"]:
-        vec[TAG_INDEX[tag]] = 1.0
+    for i, tag in enumerate(figure["worry_tags"]):
+        weight = TAG_WEIGHTS[min(i, len(TAG_WEIGHTS) - 1)]
+        vec[TAG_INDEX[tag]] = float(weight)
     return vec
 
 
@@ -143,42 +165,57 @@ def cosine(a, b):
     return dot / (na * nb)
 
 
-def score_pools(scores):
-    """[(score, [figure, ...]), ...] をスコア降順で返す。
+def ranked_figures(scores):
+    """全50人を類似度降順に並べて [(score, figure), ...] を返す。
 
-    プールは「類似度が完全に同一の全員」。fame_tier も
-    quote_source_status もプールの切り方には関与しない。
-    プール内は id 昇順で固定し、円環インデックスの基準とする。
+    同スコアは id 昇順で固定し、プールの円環インデックスの基準とする。
     """
     query = to_vector(scores)
     scored = [(round(cosine(query, figure_vector(f)), 9), f) for f in FIGURES]
     scored.sort(key=lambda r: (-r[0], r[1]["id"]))
-    pools = []
-    for score, group in itertools.groupby(scored, key=lambda r: r[0]):
-        pools.append((score, [f for _, f in group]))
-    return pools
+    return scored
 
 
-def select_for_day(pools, top_n, day):
-    """その日に表示する top_n 人を、プールを円環的に巡回して選ぶ。
+def build_pool(scores, pool_size):
+    """プール = 類似度上位 pool_size 人。
 
+    従来の「スコアが完全一致する同点集団」ではなく、スコア順の上位N人を
+    そのままプールとする。N が総人数を超える場合は全員。
+    """
+    if pool_size < 1:
+        raise ValueError("pool_size は1以上を指定してください")
+    return ranked_figures(scores)[:pool_size]
+
+
+def pool_stats(pool):
+    """プール内スコアの分布（最高・最低・差・平均）。"""
+    if not pool:
+        return {"max": 0.0, "min": 0.0, "spread": 0.0, "mean": 0.0, "size": 0}
+    vals = [s for s, _ in pool]
+    return {
+        "max": max(vals),
+        "min": min(vals),
+        "spread": max(vals) - min(vals),
+        "mean": sum(vals) / len(vals),
+        "size": len(pool),
+    }
+
+
+def select_for_day(pool, top_n, day):
+    """プールから、その日に表示する top_n 人を円環的に選ぶ。
+
+    start = epoch_days % len(pool) を起点に top_n 人を取り出す。
     戻り値: [(score, figure, pool_size), ...]（選出順。表示順ではない）
     """
-    start = epoch_days(day)
-    chosen = []
-    for score, members in pools:
-        remaining = top_n - len(chosen)
-        if remaining <= 0:
-            break
-        size = len(members)
-        if size <= remaining:
-            chosen.extend((score, f, size) for f in members)
-        else:
-            offset = start % size
-            chosen.extend(
-                (score, members[(offset + i) % size], size)
-                for i in range(remaining))
-    return chosen
+    size = len(pool)
+    if size == 0:
+        return []
+    take = min(top_n, size)
+    offset = epoch_days(day) % size
+    return [
+        (pool[(offset + i) % size][0], pool[(offset + i) % size][1], size)
+        for i in range(take)
+    ]
 
 
 def display_sort(selected, tier_pref):
@@ -194,21 +231,22 @@ def display_sort(selected, tier_pref):
     )
 
 
-def match(scores, top_n=3, tier_pref=None, day=None):
+def match(scores, top_n=3, tier_pref=None, day=None, pool_size=None):
     """入力ベクトルに対して、その日の top_n 人を表示順で返す。
 
     戻り値: [(similarity, figure, pool_size), ...]
-    pool_size はその人物が属する同スコアプールの人数。
     """
     if day is None:
         day = today_jst()
     if tier_pref is None:
         tier_pref = DEFAULT_TIER_PREF
+    if pool_size is None:
+        pool_size = DEFAULT_POOL_SIZE
     if tier_pref not in FAME_RANK:
         raise ValueError("未知の tier 優先: %s" % tier_pref)
 
-    pools = score_pools(scores)
-    return display_sort(select_for_day(pools, top_n, day), tier_pref)
+    pool = build_pool(scores, pool_size)
+    return display_sort(select_for_day(pool, top_n, day), tier_pref)
 
 
 def format_query(scores):
@@ -222,7 +260,8 @@ def is_zero_query(scores):
     return not any(scores.get(t, 0) > 0 for t in TAGS)
 
 
-def print_results(scores, top_n=3, tier_pref=None, day=None, label=None):
+def print_results(scores, top_n=3, tier_pref=None, day=None, label=None,
+                  pool_size=None):
     if label:
         print("■ %s" % label)
     print("  入力: %s" % format_query(scores))
@@ -233,7 +272,7 @@ def print_results(scores, top_n=3, tier_pref=None, day=None, label=None):
 
     print()
     for rank, (score, fig, pool) in enumerate(
-            match(scores, top_n, tier_pref, day), 1):
+            match(scores, top_n, tier_pref, day, pool_size), 1):
         pool_note = "  ※プール%d人" % pool if pool > 1 else ""
         status = fig.get("quote_source_status", "")
         warn = "  ⚠ 出典未特定" if status == "要確認" else ""
@@ -246,74 +285,115 @@ def print_results(scores, top_n=3, tier_pref=None, day=None, label=None):
         print()
 
 
-def print_header(day, tier_pref):
+def print_header(day, tier_pref, pool_size):
     print("=" * 72)
     print("感情ベクトル → 偉人マッチング プロトタイプ")
     print("対象: %d人 / タグ7軸 / 強度 %d〜%d"
           % (len(FIGURES), MIN_LEVEL, MAX_LEVEL))
     print("日付: %s（JST） / 起点 %s からの経過日数 %d"
           % (day.isoformat(), EPOCH.isoformat(), epoch_days(day)))
-    print("選出: 同スコアプールを経過日数で円環巡回（tier・出典は不関与）")
+    print("選出: 類似度上位%d人のプールを経過日数で円環巡回（tier・出典は不関与）"
+          % pool_size)
+    print("人物ベクトル: 主軸=%g / 副軸=%g の重み付き" % (TAG_WEIGHTS[0], TAG_WEIGHTS[1]))
     print("表示順: 出典ステータス → fame_tier(%s) → id" % TIER_PREF_LABEL[tier_pref])
     print("=" * 72)
     print()
 
 
-def run_presets(top_n, tier_pref, day):
-    print_header(day, tier_pref)
+def run_presets(top_n, tier_pref, day, pool_size):
+    print_header(day, tier_pref, pool_size)
     for label, scores in TEST_PATTERNS:
-        print_results(scores, top_n, tier_pref, day, label)
+        print_results(scores, top_n, tier_pref, day, label, pool_size)
         print("-" * 72)
         print()
 
 
-def simulate(top_n, tier_pref, start_day, days):
-    """各プリセットについて、期間中に各人物が上位K人へ入った回数を集計する。"""
-    print("=" * 72)
+def simulate_counts(scores, top_n, start_day, days, pool_size):
+    """期間中に各人物が上位K人へ入った回数と、プールのスコア分布を返す。"""
+    pool = build_pool(scores, pool_size)
+    counts = Counter()
+    for i in range(days):
+        day = start_day + datetime.timedelta(days=i)
+        for _, fig, _ in select_for_day(pool, top_n, day):
+            counts[fig["name"]] += 1
+    return counts, pool_stats(pool)
+
+
+def simulate(top_n, start_day, days, pool_size):
+    """単一Nでの被り頻度シミュレーション（人物ごとの内訳を表示）。"""
+    print("=" * 78)
     print("被り頻度シミュレーション")
-    print("期間: %s から %d日間 / 表示件数 K=%d"
-          % (start_day.isoformat(), days, top_n))
+    print("期間: %s から %d日間 / 表示件数 K=%d / プール上位 N=%d"
+          % (start_day.isoformat(), days, top_n, pool_size))
     print("基準: 同一入力で1人あたり %d日間に 1〜2回以内" % days)
-    print("=" * 72)
+    print("=" * 78)
 
     violations = []
     for label, scores in TEST_PATTERNS:
-        pools = score_pools(scores)
-        top_pool = len(pools[0][1]) if pools else 0
-        counts = Counter()
-        meta = {}
-        for i in range(days):
-            day = start_day + datetime.timedelta(days=i)
-            for score, fig, pool in select_for_day(pools, top_n, day):
-                counts[fig["name"]] += 1
-                meta[fig["name"]] = pool
+        counts, st = simulate_counts(scores, top_n, start_day, days, pool_size)
         print()
         print("■ %s" % label)
         print("   入力: %s" % format_query(scores))
-        print("   最上位プール: %d人 / 理論期待値: %.1f回 (= %d*%d/%d)"
-              % (top_pool, days * top_n / top_pool, days, top_n, top_pool))
-        print("   %-28s %s" % ("人物", "出現回数"))
+        print("   プール %d人 / スコア 最高%.3f 最低%.3f 差%.3f 平均%.3f"
+              % (st["size"], st["max"], st["min"], st["spread"], st["mean"]))
+        print("   理論期待値: %.1f回 (= %d*%d/%d)"
+              % (days * top_n / st["size"], days, top_n, st["size"]))
         for name, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
             mark = "  ← 基準超過" if n > 2 else ""
             print("   %-28s %3d回%s" % (name, n, mark))
             if n > 2:
-                violations.append((label, name, n, meta[name]))
+                violations.append((label, name, n, st["size"]))
     return violations
 
 
-def print_violations(violations, days):
+def compare_pool_sizes(top_n, start_day, days, candidates):
+    """シナリオ × N のマトリクスを出力する。
+
+    各セルで「最大出現回数」と「プール内スコアの劣化」を並べて見られるようにする。
+    """
+    print("=" * 78)
+    print("プールサイズ N の比較（シナリオ × N）")
+    print("期間: %s から %d日間 / 表示件数 K=%d" % (start_day.isoformat(), days, top_n))
+    print("人物ベクトル: 主軸=%g / 副軸=%g の重み付き" % (TAG_WEIGHTS[0], TAG_WEIGHTS[1]))
+    print("基準: 1人あたりの最大出現回数 <= 2")
+    print("=" * 78)
+
+    summary = []
+    for label, scores in TEST_PATTERNS:
+        print()
+        print("■ %s" % label)
+        print("   入力: %s" % format_query(scores))
+        print()
+        print("   %3s | %8s %8s | %7s %7s %7s %7s | %s"
+              % ("N", "最大出現", "平均出現", "最高", "最低", "スコア差", "平均", "判定"))
+        print("   " + "-" * 74)
+        best_n = None
+        for n in candidates:
+            counts, st = simulate_counts(scores, top_n, start_day, days, n)
+            worst = max(counts.values()) if counts else 0
+            avg = sum(counts.values()) / len(counts) if counts else 0.0
+            ok = worst <= 2
+            if ok and best_n is None:
+                best_n = st["size"]
+            print("   %3d | %6d回 %7.1f回 | %7.3f %7.3f %7.3f %7.3f | %s"
+                  % (st["size"], worst, avg, st["max"], st["min"],
+                     st["spread"], st["mean"], "OK" if ok else "超過"))
+        print()
+        if best_n is None:
+            print("   → 基準を満たす最小N: 候補内（最大%d）では達成できず"
+                  % max(candidates))
+        else:
+            print("   → 基準を満たす最小N: %d" % best_n)
+        summary.append((label, best_n))
+
     print()
-    print("=" * 72)
-    print("基準（%d日間で1〜2回以内）を超えた人物" % days)
-    print("=" * 72)
-    if not violations:
-        print("なし")
-        return
-    print("%-26s %-22s %6s %8s" % ("シナリオ", "人物", "出現", "プール"))
-    for label, name, n, pool in violations:
-        print("%-26s %-22s %5d回 %6d人" % (label[:24], name, n, pool))
-    print()
-    print("超過件数: %d 件" % len(violations))
+    print("=" * 78)
+    print("シナリオ別の最小N まとめ")
+    print("=" * 78)
+    for label, best_n in summary:
+        print("  %-30s %s" % (label[:28],
+                              ("N=%d" % best_n) if best_n else "達成不可"))
+    return summary
 
 
 def ask_level(tag):
@@ -336,8 +416,8 @@ def ask_level(tag):
         return value
 
 
-def run_interactive(top_n, tier_pref, day):
-    print_header(day, tier_pref)
+def run_interactive(top_n, tier_pref, day, pool_size):
+    print_header(day, tier_pref, pool_size)
     print("対話モード — 7タグの強度を 0〜%d で入力（空Enterで0）" % MAX_LEVEL)
     print("Ctrl-D で終了")
     while True:
@@ -350,7 +430,7 @@ def run_interactive(top_n, tier_pref, day):
                 return
             scores[tag] = level
         print()
-        print_results(scores, top_n, tier_pref, day, label="入力したベクトル")
+        print_results(scores, top_n, tier_pref, day, "入力したベクトル", pool_size)
         print("-" * 72)
 
 
@@ -359,6 +439,21 @@ def parse_date(text):
         return datetime.date.fromisoformat(text)
     except ValueError:
         raise argparse.ArgumentTypeError("日付は YYYY-MM-DD 形式で指定してください: %s" % text)
+
+
+def print_violations(violations, days):
+    print()
+    print("=" * 78)
+    print("基準（%d日間で1〜2回以内）を超えた人物" % days)
+    print("=" * 78)
+    if not violations:
+        print("なし")
+        return
+    print("%-26s %-22s %6s %8s" % ("シナリオ", "人物", "出現", "プール"))
+    for label, name, n, pool in violations:
+        print("%-26s %-22s %5d回 %6d人" % (label[:24], name, n, pool))
+    print()
+    print("超過件数: %d 件" % len(violations))
 
 
 def main():
@@ -373,26 +468,38 @@ def main():
     parser.add_argument("--rotation", choices=TIER_PREFS, default=None,
                         help="表示順のtier優先（選出には影響しない。既定: %s）"
                              % DEFAULT_TIER_PREF)
+    parser.add_argument("--pool", type=int, default=DEFAULT_POOL_SIZE,
+                        metavar="N",
+                        help="プールとする類似度上位N人（既定: %d）" % DEFAULT_POOL_SIZE)
     parser.add_argument("--simulate", type=int, nargs="?", const=30, default=None,
                         metavar="DAYS",
-                        help="被り頻度シミュレーションを実行（既定30日）")
+                        help="単一Nでの被り頻度シミュレーション（既定30日）")
+    parser.add_argument("--compare", type=int, nargs="?", const=30, default=None,
+                        metavar="DAYS",
+                        help="シナリオ×N のマトリクスを出力（既定30日）")
     args = parser.parse_args()
 
     if args.top < 1:
         parser.error("--top は1以上を指定してください")
+    if args.pool < 1:
+        parser.error("--pool は1以上を指定してください")
     if args.simulate is not None and args.simulate < 1:
         parser.error("--simulate は1以上を指定してください")
+    if args.compare is not None and args.compare < 1:
+        parser.error("--compare は1以上を指定してください")
 
     day = args.date or today_jst()
     tier_pref = args.rotation or DEFAULT_TIER_PREF
 
-    if args.simulate is not None:
-        violations = simulate(args.top, tier_pref, day, args.simulate)
+    if args.compare is not None:
+        compare_pool_sizes(args.top, day, args.compare, POOL_SIZE_CANDIDATES)
+    elif args.simulate is not None:
+        violations = simulate(args.top, day, args.simulate, args.pool)
         print_violations(violations, args.simulate)
     elif args.interactive:
-        run_interactive(args.top, tier_pref, day)
+        run_interactive(args.top, tier_pref, day, args.pool)
     else:
-        run_presets(args.top, tier_pref, day)
+        run_presets(args.top, tier_pref, day, args.pool)
 
 
 if __name__ == "__main__":
