@@ -54,7 +54,7 @@ FIGURES += [
     "https://professorbuzzkill.com/2017/01/09/gandhi-be-the-change-you-wish-to-see-in-the-world/",
     "https://josephranseth.com/gandhi-didnt-say-be-the-change-you-want-to-see-in-the-world/"
   ],
-  "notes": "【誤帰属注意】広く流布する「Be the change you wish to see in the world（あなたが見たい変化にあなた自身がなりなさい）」はガンディーの発言記録が存在しない。上記1913年の文章の要約が独り歩きしたもの。サービスでは使用しないこと。"
+  "notes": "英語圏で広く流通する簡略化された格言（1913年の文章の要約が独り歩きしたもの）はガンディー本人の発言記録が存在しないため、本DBでは採用していない。"
 },
 {
   "id": "ramanujan",
@@ -249,7 +249,7 @@ FIGURES += [
     "https://www.nelsonmandela.org/selected-quotes",
     "https://africacheck.org/fact-checks/spotchecks/no-record-mandela-saying-it-always-seems-impossible-until-its-done"
   ],
-  "notes": "【誤帰属注意】広く流布する「It always seems impossible until it's done（何事も成し遂げるまでは不可能に思えるものだ）」は、ネルソン・マンデラ財団の引用データベースに記録がなく、Quote Investigatorも一次出典を確認できていない。サービスでは使用しないこと。"
+  "notes": "SNS等で広く流通する格言は、ネルソン・マンデラ財団の引用データベースに記録がなく一次出典も確認できていないため、本DBでは採用していない。"
 },
 {
   "id": "shibusawa-eiichi",
@@ -361,7 +361,7 @@ FIGURES += [
     "https://quoteinvestigator.com/2013/01/01/einstein-imagination/",
     "https://www.nobelprize.org/prizes/physics/1921/einstein/facts/"
   ],
-  "notes": "アインシュタイン名義の格言は誤帰属が極めて多い（「同じことを繰り返して違う結果を期待するのが狂気」等は出典なし）。本DBでは一次出典が確認できたものだけを採用。"
+  "notes": "アインシュタイン名義の格言は誤帰属が極めて多く、インターネット上で広く流通する複数の警句には一次出典が存在しない。本DBでは一次出典が確認できたものだけを採用。"
 },
 {
   "id": "darwin",
@@ -374,19 +374,15 @@ FIGURES += [
   "struggle": "医学部を血を見るのが耐えられず中退し、次いで牧師を志すなど進路が定まらなかった。進化の着想を得てから『種の起源』刊行までの約20年、宗教的反発と学界からの攻撃を恐れて発表をためらい続けた。1851年に長女アニーを10歳で失った経験は、彼の信仰を決定的に揺るがしている。",
   "bio_summary": "シュルーズベリーの裕福な医師の家に生まれ、エディンバラ大学で医学、ケンブリッジ大学で神学を学ぶ。1831年から約5年、測量船ビーグル号に博物学者として乗り込み、ガラパゴス諸島などで生物の地理的変異を観察した。帰国後は自宅で膨大な観察と実験を重ねて自然選択説を構想したが公表を遅らせ、1858年にウォレスから同趣旨の論文が届いたことを機に共同発表。翌1859年に『種の起源』を刊行し、以後も蘭・ミミズなどの研究を続けて1882年に没した。",
   "achievement": "自然選択という機構によって、生物の多様性と適応を超自然的な設計者なしに説明する枠組みを確立した。『種の起源』は生物学を統一する理論的基盤となり、医学・農学・生態学から人間観そのものまでを再構成した。",
-  "quote": "生き残る種とは、最も強いものでも最も賢いものでもなく、変化に最もよく適応したものである。",
-  "quote_source_status": "誤帰属",
-  "quote_background": "（下記notes参照。代替として本DBでは検証済の別引用を採用）",
+  "quote": "私は、種は不変ではないという確信に、まるで殺人を告白するような気持ちでたどり着いた。",
+  "quote_source_status": "検証済",
+  "quote_background": "1844年1月11日、植物学者ジョゼフ・フッカー宛書簡より。当時の創造説を否定することが道徳的犯罪に等しいと感じるほどの心理的重圧の中で、事実に従うことを選んだ態度を示す。",
   "fame_tier": "超有名",
   "sources": [
     "https://www.darwinproject.ac.uk/letter/DCP-LETT-729.xml",
     "https://www.darwinproject.ac.uk/letters/darwins-life-letters/darwin-letters-1844-1846-building-scientific-network"
   ],
-  "notes": "【誤帰属注意】上記の「最も強い者が生き残るのではなく…」はダーウィンの著作に存在せず、1960年代の経営学者レオン・メギンソンによる要約が出典。使用しないこと。代替の検証済引用は quote_alt を参照。",
-  "quote_alt": "私は、種は不変ではないという確信に、まるで殺人を告白するような気持ちでたどり着いた。",
-  "quote_alt_source_status": "検証済",
-  "quote_alt_background": "1844年1月11日、植物学者ジョゼフ・フッカー宛書簡より。当時の創造説を否定することが道徳的犯罪に等しいと感じるほどの心理的重圧の中で、事実に従うことを選んだ態度を示す。",
-  "quote_alt_source": "https://www.darwinproject.ac.uk/letter/DCP-LETT-729.xml"
+  "notes": "経営学の要約から生まれた「適者生存」的な言い回しがダーウィン本人の著作として広く誤って流布しているため、本DBでは採用していない。"
 },
 {
   "id": "tesla",
@@ -449,7 +445,7 @@ FIGURES += [
     "https://en.wikipedia.org/wiki/Computing_Machinery_and_Intelligence",
     "https://www.turing.ac.uk/blog/alan-turing-quotes-separating-fact-fiction"
   ],
-  "notes": "【誤帰属注意】「Sometimes it is the people no one imagines anything of who do the things that no one can imagine（誰も想像しないような人が、想像もつかないことを成し遂げる）」は映画『イミテーション・ゲーム』(2014)の脚本上の台詞であり、チューリング本人の発言記録はない。使用しないこと。"
+  "notes": "映画『イミテーション・ゲーム』(2014)の脚本上の台詞がチューリング本人の言葉として広く誤って流布しているため、本DBでは採用していない。"
 },
 ]
 
@@ -860,7 +856,7 @@ FIGURES += [
     "https://www.loc.gov/resource/mal.4356500/",
     "https://www.archives.gov/historical-docs/emancipation-proclamation"
   ],
-  "notes": "リンカーン名義の格言は誤帰属が非常に多い（「投票は銃弾より強い」等は表現が変形されて流布）。本DBでは公文書として原文が確認できるゲティスバーグ演説から採用。"
+  "notes": "リンカーン名義の格言は誤帰属や表現の変形を伴うものが非常に多い。本DBでは公文書として原文が確認できるゲティスバーグ演説から採用。"
 },
 {
   "id": "harriet-tubman",
@@ -947,7 +943,7 @@ FIGURES += [
     "https://www.waltdisney.org/blog/evolution-mickey-mouse",
     "https://allears.net/2025/03/29/no-walt-disney-didnt-say-if-you-can-dream-it-you-can-do-it/"
   ],
-  "notes": "【誤帰属注意】「If you can dream it, you can do it（夢見ることができれば、それは実現できる）」はディズニー本人の言葉ではなく、イマジニアのトム・フィッツジェラルドがEPCOTのアトラクション『ホライズン』のために書いた台詞。使用しないこと。"
+  "notes": "広く流布する格言はディズニー本人の言葉ではなく、イマジニアのトム・フィッツジェラルドがEPCOTのアトラクション『ホライズン』のために書いた台詞であるため、本DBでは採用していない。"
 },
 {
   "id": "matsushita-konosuke",
