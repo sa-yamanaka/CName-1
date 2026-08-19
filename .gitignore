@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+
+# ローカル検証用の状態ファイル（story_engine.py が読み書きする）
+data/story_state.json
