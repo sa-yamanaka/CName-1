@@ -7,57 +7,50 @@
     python3 data/prototype_match.py -i                 # 対話モード
     python3 data/prototype_match.py -n 5               # 上位5人まで表示（既定は3）
     python3 data/prototype_match.py --date 2026-08-20  # 日付を固定して実行（テスト用）
-    python3 data/prototype_match.py --rotation hidden  # ローテーションを直接指定
+    python3 data/prototype_match.py --rotation hidden  # 表示順のtier優先を変更
+    python3 data/prototype_match.py --simulate 30      # 30日間の被り頻度を集計
 
 仕組み:
     - 入力  : 7タグそれぞれに 0〜3 の強度を持つベクトル
     - 人物  : worry_tags を同じ7次元の one-hot ベクトルに変換
-    - 照合  : コサイン類似度 → 下記のタイブレーク順で上位N人
+    - 照合  : コサイン類似度でプールを作り、日替わりで K 人を選出
 
-== 並び順（タイブレーク）==
-    1. 類似度スコア（降順）
-    2. quote_source_status: 検証済 > 要確認 > 誤帰属
-       出典が確認できている格言を優先的に上位へ出す。
-       （誤帰属は現在DB上0件だが、将来の混入に備えて最下位に置いている）
-    3. fame_tier の日替わりローテーション
-       日付から決まる3モードのいずれかで tier の優先順を入れ替える:
-         - famous  : 超有名 → 知る人ぞ知る → マイナー
-         - hidden  : マイナー → 知る人ぞ知る → 超有名
-         - neutral : tier で差をつけない（4. のid順に委ねる）
-       モードは EPOCH からの経過日数を 3 で割った余りで巡回する
-       （famous → hidden → neutral → famous …）。
-       連続する日は必ず別のモードになる。
-    4. id 昇順（グループ内の基準順序）
+== 選出（誰を出すか）==
+    「かぶりたくない」の基準を “同一入力で特定の人物が30日間に上位K人へ
+    入る回数を1〜2回以内に抑える” と定義し直したことに伴い、
+    fame_tier による3モード（famous / hidden / neutral）での絞り込みは撤廃した。
 
-== 同点集団内の日替わり巡回シフト ==
-    1〜4 で並べたあと、「類似度・出典ステータス・fame_tierランクがすべて同じ」
-    人物の集団（= どう並べても上位ルール上は等価な集団）に対して、
-    集団内だけを巡回シフトする。これにより表示件数より大きい同点集団から、
-    日によって異なる人物が表示される。
-    ソート順（1〜3）そのものは変えず、集団の内部順序だけを回す。
+    1. 類似度スコアが完全に同一の人物をひとつのプールとする
+       （fame_tier も quote_source_status も選出には一切影響しない）
+    2. スコアの高いプールから順に、start = epoch_days % pool_size を起点として
+       K人を円環的に取り出す
+    3. プールがK人に満たない場合は全員を採用し、残り枠を次のプールから
+       同じ方法で埋める
 
-    シフト量には epoch_days // 3、すなわち「そのモードが何巡目か」を使う。
-    epoch_days をそのまま使うと 3日周期のモード巡回と共振し、
-    たとえばサイズ3の集団では1通り、サイズ6の集団では2通りの
-    ウィンドウしか現れない（モードが出る日は epoch_days が 3 で割った
-    余りが固定されるため）。// 3 を挟むと、そのモードが巡ってくるたびに
-    シフトが 1 ずつ進み、集団の全メンバーが順に露出する。
+    start が経過日数そのものなので、プールサイズと互いに素かどうかに関わらず
+    日ごとに1ずつ進み、プール全体を均等に巡回する。
 
-== スコアと同点に関する注意 ==
-    本DBの50人は全員ちょうど2タグを持つため、人物ベクトルのノルムは
-    全員 sqrt(2) で一定になる。したがってコサイン類似度による「順位」は
-    「その人物の2タグに対応する入力強度の単純合計」と数学的に等価であり、
-    現時点では正規化はスコアを 0〜1 に収める役割しか果たしていない。
-    さらに50人が18種類のタグ集合しか持たないため同点が多発する
-    （例: 「孤独 + 怒り」は8人が完全に同スコア）。上記2〜4と巡回シフトは、
-    その同点集団をどう並べ、どこを切り出すかのルールである。
+== 表示順（選ばれたK人をどう並べるか）==
+    選出とは独立に、その日のK人だけを次の優先順で並べ替える。
+    並べ替えは誰が選ばれるかには一切影響しない。
+    1. quote_source_status: 検証済 > 要確認 > 誤帰属
+    2. fame_tier: 既定は「超有名 → 知る人ぞ知る → マイナー」
+       --rotation で hidden（マイナー優先）/ neutral（tierを見ない）に変更可
+    3. id 昇順
+
+== 被り頻度についての注意 ==
+    1人あたりの30日間の期待出現回数は 30 * K / pool_size である。
+    K=3 で2回以内に収めるにはプールが45人必要だが、本DBの50人は
+    18種類のタグ集合しか持たず、同一スコアのプールは最大8人しかない。
+    したがって現在のデータ構造では、この基準は原理的に達成できない。
+    実測値は --simulate で確認できる。
 """
 import sys
 import math
-import itertools
 import argparse
 import datetime
-from collections import Counter
+import itertools
+from collections import Counter, defaultdict
 
 sys.path.insert(0, '/home/user/CName-1/data')
 from figures_data import FIGURES
@@ -71,20 +64,21 @@ MIN_LEVEL, MAX_LEVEL = 0, 3
 # 日本向けサービスを想定し、日付は JST で判定する
 JST = datetime.timezone(datetime.timedelta(hours=9))
 
-# ローテーションの起点。ここからの経過日数で mode と巡回シフトを決める。
-# 値そのものに意味はないが、変更すると全ユーザーの当日の並びが変わる。
+# 巡回の起点。ここからの経過日数でプール内の取り出し位置が決まる。
+# 変更すると全ユーザーの当日の並びが変わる。
 EPOCH = datetime.date(2026, 1, 1)
 
-# タイブレーク2: 出典ステータスの優先順（小さいほど上位）
+# 表示順1: 出典ステータスの優先順（小さいほど上位）
 STATUS_RANK = {"検証済": 0, "要確認": 1, "誤帰属": 2}
 STATUS_FALLBACK = 9
 
-# タイブレーク3: fame_tier の日替わりローテーション（小さいほど上位）
-ROTATIONS = ["famous", "hidden", "neutral"]
-ROTATION_LABEL = {
-    "famous": "超有名を優先",
-    "hidden": "マイナー・知る人ぞ知るを優先",
-    "neutral": "tierで差をつけない（通常表示）",
+# 表示順2: fame_tier の優先順（小さいほど上位）。選出には影響しない。
+TIER_PREFS = ["famous", "hidden", "neutral"]
+DEFAULT_TIER_PREF = "famous"
+TIER_PREF_LABEL = {
+    "famous": "超有名を上に",
+    "hidden": "マイナー・知る人ぞ知るを上に",
+    "neutral": "tierで差をつけない",
 }
 FAME_RANK = {
     "famous": {"超有名": 0, "知る人ぞ知る": 1, "マイナー": 2},
@@ -115,25 +109,6 @@ def today_jst():
 def epoch_days(day):
     """EPOCH からの経過日数。EPOCH より前の日付は負になる。"""
     return (day - EPOCH).days
-
-
-def rotation_for_date(day):
-    """日付から fame_tier ローテーションのモードを決める。
-
-    経過日数 mod 3 の巡回。連続する日は必ず別のモードになる。
-    Python の % は負数でも非負を返すため、EPOCH 以前の日付でも正しく巡回する。
-    """
-    return ROTATIONS[epoch_days(day) % len(ROTATIONS)]
-
-
-def tie_shift_index(day):
-    """同点集団内の巡回シフト量の元になる値。
-
-    「そのモードが何巡目に来たか」に相当する。epoch_days をそのまま使うと
-    3日周期のモード巡回と共振してシフトが一部の値しか取らないため、
-    len(ROTATIONS) で割ってから使う（詳細はモジュール docstring 参照）。
-    """
-    return epoch_days(day) // len(ROTATIONS)
 
 
 def to_vector(scores):
@@ -168,65 +143,72 @@ def cosine(a, b):
     return dot / (na * nb)
 
 
-def sort_key(score, figure, mode):
-    """(類似度降順, 出典ステータス, fame_tierローテーション, id) の複合キー。"""
-    status = figure.get("quote_source_status")
-    tier = figure.get("fame_tier")
-    return (
-        -score,
-        STATUS_RANK.get(status, STATUS_FALLBACK),
-        FAME_RANK[mode].get(tier, FAME_FALLBACK),
-        figure["id"],
-    )
+def score_pools(scores):
+    """[(score, [figure, ...]), ...] をスコア降順で返す。
 
-
-def equivalence_key(score, figure, mode):
-    """並び順ルール上どう並べても等価な集団を識別するキー（id を除いた部分）。"""
-    return (
-        round(score, 9),
-        STATUS_RANK.get(figure.get("quote_source_status"), STATUS_FALLBACK),
-        FAME_RANK[mode].get(figure.get("fame_tier"), FAME_FALLBACK),
-    )
-
-
-def rotate_ties(scored, mode, shift):
-    """等価な集団ごとに内部順序だけを巡回シフトする。
-
-    集団の境界（= 1〜3のソート順）は動かさないため、上位ルールは保たれる。
+    プールは「類似度が完全に同一の全員」。fame_tier も
+    quote_source_status もプールの切り方には関与しない。
+    プール内は id 昇順で固定し、円環インデックスの基準とする。
     """
-    rotated = []
-    for _, group in itertools.groupby(
-            scored, key=lambda r: equivalence_key(r[0], r[1], mode)):
-        members = list(group)
-        if len(members) > 1:
-            offset = shift % len(members)
-            members = members[offset:] + members[:offset]
-        rotated.extend(members)
-    return rotated
+    query = to_vector(scores)
+    scored = [(round(cosine(query, figure_vector(f)), 9), f) for f in FIGURES]
+    scored.sort(key=lambda r: (-r[0], r[1]["id"]))
+    pools = []
+    for score, group in itertools.groupby(scored, key=lambda r: r[0]):
+        pools.append((score, [f for _, f in group]))
+    return pools
 
 
-def match(scores, top_n=3, mode=None, day=None):
-    """入力ベクトルに近い人物を上位 top_n 件返す。
+def select_for_day(pools, top_n, day):
+    """その日に表示する top_n 人を、プールを円環的に巡回して選ぶ。
 
-    mode / day を省略した場合は JST の当日から決める。
-    戻り値: [(similarity, figure, tied_total), ...]
-    tied_total は同じ類似度を持つ人物の総数（同点集団の大きさ）。
+    戻り値: [(score, figure, pool_size), ...]（選出順。表示順ではない）
+    """
+    start = epoch_days(day)
+    chosen = []
+    for score, members in pools:
+        remaining = top_n - len(chosen)
+        if remaining <= 0:
+            break
+        size = len(members)
+        if size <= remaining:
+            chosen.extend((score, f, size) for f in members)
+        else:
+            offset = start % size
+            chosen.extend(
+                (score, members[(offset + i) % size], size)
+                for i in range(remaining))
+    return chosen
+
+
+def display_sort(selected, tier_pref):
+    """選ばれたK人だけを表示順に並べ替える。選出結果は変えない。"""
+    return sorted(
+        selected,
+        key=lambda r: (
+            -r[0],
+            STATUS_RANK.get(r[1].get("quote_source_status"), STATUS_FALLBACK),
+            FAME_RANK[tier_pref].get(r[1].get("fame_tier"), FAME_FALLBACK),
+            r[1]["id"],
+        ),
+    )
+
+
+def match(scores, top_n=3, tier_pref=None, day=None):
+    """入力ベクトルに対して、その日の top_n 人を表示順で返す。
+
+    戻り値: [(similarity, figure, pool_size), ...]
+    pool_size はその人物が属する同スコアプールの人数。
     """
     if day is None:
         day = today_jst()
-    if mode is None:
-        mode = rotation_for_date(day)
-    if mode not in FAME_RANK:
-        raise ValueError("未知のローテーション: %s" % mode)
+    if tier_pref is None:
+        tier_pref = DEFAULT_TIER_PREF
+    if tier_pref not in FAME_RANK:
+        raise ValueError("未知の tier 優先: %s" % tier_pref)
 
-    query = to_vector(scores)
-    scored = [(cosine(query, figure_vector(f)), f) for f in FIGURES]
-    scored.sort(key=lambda r: sort_key(r[0], r[1], mode))
-    scored = rotate_ties(scored, mode, tie_shift_index(day))
-
-    # スコアは浮動小数なので丸めてから同点数を数える
-    tie_count = Counter(round(s, 9) for s, _ in scored)
-    return [(s, f, tie_count[round(s, 9)]) for s, f in scored[:top_n]]
+    pools = score_pools(scores)
+    return display_sort(select_for_day(pools, top_n, day), tier_pref)
 
 
 def format_query(scores):
@@ -236,21 +218,26 @@ def format_query(scores):
     return "、".join("%s=%d" % (t, v) for t, v in active)
 
 
-def print_results(scores, top_n=3, mode=None, day=None, label=None):
+def is_zero_query(scores):
+    return not any(scores.get(t, 0) > 0 for t in TAGS)
+
+
+def print_results(scores, top_n=3, tier_pref=None, day=None, label=None):
     if label:
         print("■ %s" % label)
     print("  入力: %s" % format_query(scores))
 
-    if not any(scores.get(t, 0) > 0 for t in TAGS):
+    if is_zero_query(scores):
         print("  → 入力が零ベクトルのため類似度を計算できません。\n")
         return
 
     print()
-    for rank, (score, fig, tied) in enumerate(match(scores, top_n, mode, day), 1):
-        tie_note = "  ※同点%d人中" % tied if tied > 1 else ""
+    for rank, (score, fig, pool) in enumerate(
+            match(scores, top_n, tier_pref, day), 1):
+        pool_note = "  ※プール%d人" % pool if pool > 1 else ""
         status = fig.get("quote_source_status", "")
         warn = "  ⚠ 出典未特定" if status == "要確認" else ""
-        print("  %d位  類似度 %.3f%s" % (rank, score, tie_note))
+        print("  %d位  類似度 %.3f%s" % (rank, score, pool_note))
         print("      %s（%s）" % (fig["name"], fig["era"]))
         print("      悩みの軸: %s ／ 有名度: %s ／ 出典: %s"
               % (" + ".join(fig["worry_tags"]), fig["fame_tier"], status))
@@ -259,27 +246,74 @@ def print_results(scores, top_n=3, mode=None, day=None, label=None):
         print()
 
 
-def print_header(day, mode):
+def print_header(day, tier_pref):
     print("=" * 72)
     print("感情ベクトル → 偉人マッチング プロトタイプ")
     print("対象: %d人 / タグ7軸 / 強度 %d〜%d"
           % (len(FIGURES), MIN_LEVEL, MAX_LEVEL))
-    print("日付: %s（JST） / 経過日数 %d / ローテーション: %s — %s"
-          % (day.isoformat(), epoch_days(day), mode, ROTATION_LABEL[mode]))
-    print("  （起点 %s から mod %d の巡回。連続する日は必ず別モード）"
-          % (EPOCH.isoformat(), len(ROTATIONS)))
-    print("同点の並び: 出典ステータス（検証済>要確認） → fame_tier → id")
-    print("同点集団の巡回シフト量: %d（そのモードの巡回回数）" % tie_shift_index(day))
+    print("日付: %s（JST） / 起点 %s からの経過日数 %d"
+          % (day.isoformat(), EPOCH.isoformat(), epoch_days(day)))
+    print("選出: 同スコアプールを経過日数で円環巡回（tier・出典は不関与）")
+    print("表示順: 出典ステータス → fame_tier(%s) → id" % TIER_PREF_LABEL[tier_pref])
     print("=" * 72)
     print()
 
 
-def run_presets(top_n, mode, day):
-    print_header(day, mode)
+def run_presets(top_n, tier_pref, day):
+    print_header(day, tier_pref)
     for label, scores in TEST_PATTERNS:
-        print_results(scores, top_n, mode, day, label)
+        print_results(scores, top_n, tier_pref, day, label)
         print("-" * 72)
         print()
+
+
+def simulate(top_n, tier_pref, start_day, days):
+    """各プリセットについて、期間中に各人物が上位K人へ入った回数を集計する。"""
+    print("=" * 72)
+    print("被り頻度シミュレーション")
+    print("期間: %s から %d日間 / 表示件数 K=%d"
+          % (start_day.isoformat(), days, top_n))
+    print("基準: 同一入力で1人あたり %d日間に 1〜2回以内" % days)
+    print("=" * 72)
+
+    violations = []
+    for label, scores in TEST_PATTERNS:
+        pools = score_pools(scores)
+        top_pool = len(pools[0][1]) if pools else 0
+        counts = Counter()
+        meta = {}
+        for i in range(days):
+            day = start_day + datetime.timedelta(days=i)
+            for score, fig, pool in select_for_day(pools, top_n, day):
+                counts[fig["name"]] += 1
+                meta[fig["name"]] = pool
+        print()
+        print("■ %s" % label)
+        print("   入力: %s" % format_query(scores))
+        print("   最上位プール: %d人 / 理論期待値: %.1f回 (= %d*%d/%d)"
+              % (top_pool, days * top_n / top_pool, days, top_n, top_pool))
+        print("   %-28s %s" % ("人物", "出現回数"))
+        for name, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
+            mark = "  ← 基準超過" if n > 2 else ""
+            print("   %-28s %3d回%s" % (name, n, mark))
+            if n > 2:
+                violations.append((label, name, n, meta[name]))
+    return violations
+
+
+def print_violations(violations, days):
+    print()
+    print("=" * 72)
+    print("基準（%d日間で1〜2回以内）を超えた人物" % days)
+    print("=" * 72)
+    if not violations:
+        print("なし")
+        return
+    print("%-26s %-22s %6s %8s" % ("シナリオ", "人物", "出現", "プール"))
+    for label, name, n, pool in violations:
+        print("%-26s %-22s %5d回 %6d人" % (label[:24], name, n, pool))
+    print()
+    print("超過件数: %d 件" % len(violations))
 
 
 def ask_level(tag):
@@ -302,8 +336,8 @@ def ask_level(tag):
         return value
 
 
-def run_interactive(top_n, mode, day):
-    print_header(day, mode)
+def run_interactive(top_n, tier_pref, day):
+    print_header(day, tier_pref)
     print("対話モード — 7タグの強度を 0〜%d で入力（空Enterで0）" % MAX_LEVEL)
     print("Ctrl-D で終了")
     while True:
@@ -316,7 +350,7 @@ def run_interactive(top_n, mode, day):
                 return
             scores[tag] = level
         print()
-        print_results(scores, top_n, mode, day, label="入力したベクトル")
+        print_results(scores, top_n, tier_pref, day, label="入力したベクトル")
         print("-" * 72)
 
 
@@ -336,20 +370,29 @@ def main():
                         help="表示する上位件数（既定: 3）")
     parser.add_argument("--date", type=parse_date, default=None,
                         help="日付を固定して実行（YYYY-MM-DD、テスト用）")
-    parser.add_argument("--rotation", choices=ROTATIONS, default=None,
-                        help="fame_tierローテーションを直接指定（--date より優先）")
+    parser.add_argument("--rotation", choices=TIER_PREFS, default=None,
+                        help="表示順のtier優先（選出には影響しない。既定: %s）"
+                             % DEFAULT_TIER_PREF)
+    parser.add_argument("--simulate", type=int, nargs="?", const=30, default=None,
+                        metavar="DAYS",
+                        help="被り頻度シミュレーションを実行（既定30日）")
     args = parser.parse_args()
 
     if args.top < 1:
         parser.error("--top は1以上を指定してください")
+    if args.simulate is not None and args.simulate < 1:
+        parser.error("--simulate は1以上を指定してください")
 
     day = args.date or today_jst()
-    mode = args.rotation or rotation_for_date(day)
+    tier_pref = args.rotation or DEFAULT_TIER_PREF
 
-    if args.interactive:
-        run_interactive(args.top, mode, day)
+    if args.simulate is not None:
+        violations = simulate(args.top, tier_pref, day, args.simulate)
+        print_violations(violations, args.simulate)
+    elif args.interactive:
+        run_interactive(args.top, tier_pref, day)
     else:
-        run_presets(args.top, mode, day)
+        run_presets(args.top, tier_pref, day)
 
 
 if __name__ == "__main__":
