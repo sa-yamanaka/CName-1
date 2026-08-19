@@ -16,6 +16,9 @@
 シミュレーションの例:
     # 通常進行（7日で自然完了）
     python3 data/story_engine.py --simulate-days 7 --pattern same
+    # 90日まわして「30日窓で同一人物が何回主人公になったか」を測る
+    python3 data/story_engine.py --simulate-days 90 --pattern same \
+        --auto-restart --exclude-recent 3 --window 30
     # 一時保存 → 翌日再開
     python3 data/story_engine.py --simulate-days 8 --pattern 0,0,2,0,0,0,0,0 \
         --on-change pause --on-resume resume
@@ -56,6 +59,33 @@
     再開なら status=active に戻して同じ current_day から続行し、その日の入力
     ベクトルの判定に進む。新しく占うなら、その日の入力で再マッチングする。
 
+== 直近履歴による除外 ==
+    story_state.json の history に、過去に主人公になった人物を
+    {figure_id, started_date} で新しい順に積む（既定10件まで）。
+    新規マッチング（--start / 中止後の再マッチング / paused からの占い直し /
+    --auto-restart による次の物語）では、直近M件（既定3、--exclude-recent）に
+    含まれる人物を候補から除いてから選出する。
+
+    選出そのものは prototype_match と同じ手順（ranked_figures → 上位N人の
+    プール → select_for_day の円環巡回 → display_sort）で、除外はランキングと
+    プール作成の間に挟むだけ。除外が空なら
+    prototype_match.match(top_n=1, ...) と完全に同じ結果になる（実測確認済み）。
+
+    除外の結果プールが0人になったら、M を1件ずつ減らして再試行する。M=0 まで
+    緩めても0人なら人物データ自体が空なのでエラーにする。人物50人・M<=10 の
+    既定構成ではこの緩和は発生しない。
+
+    【重要な実測結果】M はプールサイズ N 以上でないと被り間隔に効かない。
+    巡回はもともと N 件おきに同じ人物へ戻るため、M < N では「次に出る人物」が
+    除外対象に入らず素通りする。N=10・M=3（既定）では、毎日再マッチングする
+    最悪条件で30日あたり最大3回のままで、M=0 と変わらない。M=10 にすると
+    最大2回に収まる。ただし7日連載が普通に回る条件では30日窓に4マッチ程度しか
+    入らないため、M によらず最大1回で基準を満たす。
+
+    なお M を上げるコストはプール拡張（N を増やす）より格段に小さい。
+    M=0→12 で主人公の平均類似度は 0.814→0.713、閾値0.3未満は0%のまま。
+    N を45に広げた場合は平均0.299・57%が0.3未満まで落ちる。
+
 == 章の中身 ==
     章本文は CHAPTERS のプレースホルダー。7日分の骨格（出会い→旅立ち）だけを
     置いてあり、実際の文章生成は本プロトタイプの対象外。
@@ -70,8 +100,9 @@ import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from prototype_match import (
-    TAGS, MIN_LEVEL, MAX_LEVEL, DEFAULT_POOL_SIZE,
-    cosine, to_vector, match, today_jst, format_query, is_zero_query,
+    TAGS, MIN_LEVEL, MAX_LEVEL, DEFAULT_POOL_SIZE, DEFAULT_TIER_PREF,
+    cosine, to_vector, today_jst, format_query, is_zero_query,
+    ranked_figures, select_for_day, display_sort,
     TEST_PATTERNS, parse_date,
 )
 from figures_data import FIGURES
@@ -110,6 +141,15 @@ CHOICE_LABEL = {
 RESUME_CONTINUE = "resume"
 RESUME_NEW = "new"
 
+# 直近M件に登場した人物を、新規マッチングの候補から除外する。
+# プール拡張（N を増やす）は7日連載のマッチ品質を大きく下げると実測されたため、
+# 被り対策はプールサイズではなく「直近に出した人物の除外」で行う。
+DEFAULT_EXCLUDE_RECENT = 3
+
+# story_state.json に残す history の件数。除外に使う M より短いと M を満たせない
+# ため、実際の上限は max(DEFAULT_HISTORY_LIMIT, M) とする。
+DEFAULT_HISTORY_LIMIT = 10
+
 # 7日分の章。プレースホルダー（本文生成はプロトタイプの対象外）
 CHAPTERS = [
     ("出会い", "{name} の人生が、あなたの「{axis}」と交わる地点。"),
@@ -125,7 +165,7 @@ CHAPTERS = [
 # ---------------------------------------------------------------- 状態の入出力
 
 def default_state():
-    return {"version": STATE_VERSION, "story": None, "archive": []}
+    return {"version": STATE_VERSION, "story": None, "history": [], "archive": []}
 
 
 def load_state():
@@ -140,6 +180,7 @@ def load_state():
     if not isinstance(state, dict) or "story" not in state:
         raise SystemExit("状態ファイルの形式が不正です: %s" % STATE_PATH)
     state.setdefault("version", STATE_VERSION)
+    state.setdefault("history", [])
     state.setdefault("archive", [])
     validate_story(state["story"])
     return state
@@ -188,17 +229,78 @@ def normalize_scores(scores):
     return {tag: int(scores.get(tag, 0)) for tag in TAGS}
 
 
-def start_story(state, scores, day, pool_size, reason):
+def recent_figure_ids(state, exclude_recent):
+    """history の直近 exclude_recent 件に含まれる figure_id の集合。"""
+    if exclude_recent < 1:
+        return set()
+    return {h["figure_id"] for h in state.get("history", [])[-exclude_recent:]}
+
+
+def match_excluding(scores, day, pool_size, excluded):
+    """excluded を除いてから、prototype_match と同じ手順で1位を選ぶ。
+
+    ranked_figures() で全員を類似度降順に並べたあと、除外対象を落としてから
+    上位 pool_size 人をプールとする。プールの円環巡回（select_for_day）と
+    表示順（display_sort）はそのまま流用するので、excluded が空なら
+    prototype_match.match(scores, top_n=1, ...) と完全に同じ結果になる。
+    """
+    ranked = [r for r in ranked_figures(scores) if r[1]["id"] not in excluded]
+    pool = ranked[:pool_size]
+    return display_sort(select_for_day(pool, 1, day), DEFAULT_TIER_PREF)
+
+
+def select_figure(state, scores, day, pool_size, exclude_recent):
+    """直近M件を除外して主人公を選ぶ。0人になったらMを1件ずつ緩める。
+
+    戻り値: (score, figure, 実際に使ったM)
+
+    人物50人に対して M は最大でも history の長さぶんしか効かないため、
+    通常この緩和は発生しない。全員が除外されうる小さな人物データや、
+    M を極端に大きくした場合の保険として実装している。
+    """
+    m = exclude_recent
+    while m > 0:
+        excluded = recent_figure_ids(state, m)
+        results = match_excluding(scores, day, pool_size, excluded)
+        if results:
+            if m != exclude_recent:
+                log("       ※除外M=%d では候補が0人になったため M=%d まで緩めました"
+                    % (exclude_recent, m))
+            score, figure, _pool = results[0]
+            return score, figure, m
+        m -= 1
+    # M=0（除外なし）まで緩めても候補が無いのは、人物データ自体が空のとき
+    results = match_excluding(scores, day, pool_size, set())
+    if not results:
+        raise SystemExit("マッチする人物が見つかりませんでした。")
+    if exclude_recent > 0:
+        log("       ※除外M=%d では候補が0人になったため、除外なしで選びました"
+            % exclude_recent)
+    score, figure, _pool = results[0]
+    return score, figure, 0
+
+
+def push_history(state, figure_id, day, history_limit):
+    """登場した人物を history に積む（古いものから捨てる）。"""
+    history = state.setdefault("history", [])
+    history.append({"figure_id": figure_id, "started_date": day.isoformat()})
+    if len(history) > history_limit:
+        del history[:len(history) - history_limit]
+
+
+def start_story(state, scores, day, pool_size, reason,
+                exclude_recent=DEFAULT_EXCLUDE_RECENT,
+                history_limit=DEFAULT_HISTORY_LIMIT):
     """マッチングして新しい物語を作る（status=active / current_day=1）。
 
-    prototype_match.match() の1位をその物語の人物とする。
+    直近 exclude_recent 件に登場した人物を候補から除外したうえで、
+    prototype_match と同じ選出手順の1位をその物語の人物とする。
     """
     if is_zero_query(scores):
         raise SystemExit("入力が零ベクトルのためマッチングできません。")
-    results = match(scores, top_n=1, day=day, pool_size=pool_size)
-    if not results:
-        raise SystemExit("マッチする人物が見つかりませんでした。")
-    score, figure, _pool = results[0]
+    score, figure, used_m = select_figure(state, scores, day, pool_size,
+                                          exclude_recent)
+    excluded = recent_figure_ids(state, used_m)
     story = {
         "figure_id": figure["id"],
         "figure_name": figure["name"],
@@ -211,8 +313,11 @@ def start_story(state, scores, day, pool_size, reason):
         "day_log": [],
     }
     state["story"] = story
+    push_history(state, figure["id"], day, max(history_limit, exclude_recent))
     stamp(day, "新しい物語を開始（%s）" % reason)
     log("       入力: %s" % format_query(scores))
+    if excluded:
+        log("       除外: 直近%d件 %s" % (used_m, "、".join(sorted(excluded))))
     log("       マッチ: %s（%s） 類似度 %.3f"
         % (figure["name"], figure["era"], score))
     log("       状態: status=active / current_day=1 / started_date=%s"
@@ -370,24 +475,34 @@ class ScriptedResponder(object):
 
 # ------------------------------------------------------------------ 1日進める
 
-def advance_one_day(state, source, responder, day, threshold, pool_size):
+def advance_one_day(state, source, responder, day, threshold, pool_size,
+                    exclude_recent=DEFAULT_EXCLUDE_RECENT,
+                    history_limit=DEFAULT_HISTORY_LIMIT, auto_restart=False):
     """1日ぶんの状態遷移を行う。state を書き換えて True/False を返す。
 
     戻り値は「この先も進められるか」。completed / cancelled のまま
-    終わった場合は False。
+    終わった場合は False（auto_restart=True なら次の物語を開始して True）。
     """
     story = state.get("story")
     if story is None:
         stamp(day, "物語がありません。--start で開始してください。")
         return False
-    if story["status"] == STATUS_COMPLETED:
-        stamp(day, "この物語は完了済みです（status=completed）。"
-                   "--start で新しい物語を開始してください。")
-        return False
-    if story["status"] == STATUS_CANCELLED:
-        stamp(day, "この物語は中止済みです（status=cancelled）。"
-                   "--start で新しい物語を開始してください。")
-        return False
+    if story["status"] in (STATUS_COMPLETED, STATUS_CANCELLED):
+        finished = ("完了済みです（status=completed）"
+                    if story["status"] == STATUS_COMPLETED
+                    else "中止済みです（status=cancelled）")
+        if not auto_restart:
+            stamp(day, "この物語は%s。--start で新しい物語を開始してください。"
+                  % finished)
+            return False
+        stamp(day, "この物語は%s。--auto-restart により次の物語を開始します。"
+              % finished)
+        archive_story(state, story, "完走・中止後の自動再開", day)
+        scores = source.next_scores("次の物語のための、今日の気持ち")
+        start_story(state, scores, day, pool_size, "自動再開",
+                    exclude_recent, history_limit)
+        state["story"]["last_advanced_date"] = day.isoformat()
+        return True
 
     # paused のときは、まず「再開 or 新しく占う」を選ばせる
     if story["status"] == STATUS_PAUSED:
@@ -396,7 +511,8 @@ def advance_one_day(state, source, responder, day, threshold, pool_size):
         if responder.ask_resume() == RESUME_NEW:
             archive_story(state, story, "paused から新規占いへ切り替え", day)
             scores = source.next_scores("新しく占う")
-            start_story(state, scores, day, pool_size, "paused からの占い直し")
+            start_story(state, scores, day, pool_size, "paused からの占い直し",
+                        exclude_recent, history_limit)
             story = state["story"]
             story["last_advanced_date"] = day.isoformat()
             return True
@@ -416,7 +532,9 @@ def advance_one_day(state, source, responder, day, threshold, pool_size):
     if similarity >= threshold:
         progress_one_day(story, day)
         story["last_advanced_date"] = day.isoformat()
-        return story["status"] == STATUS_ACTIVE
+        # 完走したら通常はここで打ち切り。auto_restart のときは翌日の呼び出しで
+        # 次の物語を開始するため、続行可能として返す。
+        return story["status"] == STATUS_ACTIVE or auto_restart
 
     # 閾値未満 → 感情の変化を検知
     stamp(day, "⚠ 感情の変化を検知しました。")
@@ -442,7 +560,8 @@ def advance_one_day(state, source, responder, day, threshold, pool_size):
     story["status"] = STATUS_CANCELLED
     stamp(day, "中止。status=active → cancelled（第%d章で破棄）" % story["current_day"])
     archive_story(state, story, "ユーザーが中止を選択", day)
-    start_story(state, scores, day, pool_size, "中止直後の再マッチング")
+    start_story(state, scores, day, pool_size, "中止直後の再マッチング",
+                exclude_recent, history_limit)
     state["story"]["last_advanced_date"] = day.isoformat()
     return True
 
@@ -472,6 +591,14 @@ def cmd_status(state):
         print("  最終実行日      : %s" % (story.get("last_advanced_date") or "-"))
         read = [str(d["day"]) for d in story.get("day_log", [])]
         print("  表示済みの章    : %s" % (", ".join(read) if read else "なし"))
+    history = state.get("history", [])
+    if history:
+        print()
+        print("  直近の登場履歴（新しいものが下）: %d件" % len(history))
+        for h in history:
+            fig = FIGURE_BY_ID.get(h["figure_id"])
+            print("    %s  %s" % (h["started_date"],
+                                  fig["name"] if fig else h["figure_id"]))
     archive = state.get("archive", [])
     if archive:
         print()
@@ -483,7 +610,7 @@ def cmd_status(state):
     print()
 
 
-def cmd_start(day, pool_size):
+def cmd_start(day, pool_size, exclude_recent, history_limit):
     state = load_state()
     if state.get("story") and state["story"]["status"] in (STATUS_ACTIVE,
                                                            STATUS_PAUSED):
@@ -494,14 +621,17 @@ def cmd_start(day, pool_size):
     if state.get("story"):
         archive_story(state, state["story"], "新しい物語の開始により終了", day)
     scores = InteractiveInput().next_scores("今の気持ち")
-    start_story(state, scores, day, pool_size, "--start")
+    start_story(state, scores, day, pool_size, "--start",
+                exclude_recent, history_limit)
     save_state(state)
 
 
-def cmd_advance(day, threshold, pool_size):
+def cmd_advance(day, threshold, pool_size, exclude_recent, history_limit,
+                auto_restart):
     state = load_state()
     advance_one_day(state, InteractiveInput(), InteractiveResponder(),
-                    day, threshold, pool_size)
+                    day, threshold, pool_size, exclude_recent, history_limit,
+                    auto_restart)
     save_state(state)
 
 
@@ -531,7 +661,8 @@ def parse_pattern_spec(spec, days, start_pattern, seed, count):
 
 
 def cmd_simulate(days, spec, start_pattern, seed, on_change, on_resume,
-                 start_day, threshold, pool_size):
+                 start_day, threshold, pool_size, exclude_recent,
+                 history_limit, auto_restart, window):
     """N日分の擬似入力を連続実行し、状態遷移をログ表示する。
 
     再現性のため、状態ファイルを初期化してから開始する。
@@ -544,6 +675,9 @@ def cmd_simulate(days, spec, start_pattern, seed, on_change, on_resume,
     print("選択  : 変化検知時=%s / 再開時=%s" % (on_change, on_resume))
     print("閾値  : %.2f / プール上位 %d人 / 連載 %d日"
           % (threshold, pool_size, STORY_LENGTH))
+    print("除外  : 直近%d件の人物を新規マッチングから除外 / history上限 %d件%s"
+          % (exclude_recent, max(history_limit, exclude_recent),
+             " / 完走後は自動再開" if auto_restart else ""))
     print("状態  : %s（毎日 読み込み→遷移→書き出し）" % STATE_PATH)
     print("=" * 78)
     print()
@@ -562,8 +696,11 @@ def cmd_simulate(days, spec, start_pattern, seed, on_change, on_resume,
     desc, scores = TEST_PATTERNS[start_pattern]
     print("=== Day 0: 初期マッチング ===")
     log("  入力[パターン%d] %s" % (start_pattern, desc))
-    start_story(state, dict(scores), start_day, pool_size, "シミュレーション開始")
+    start_story(state, dict(scores), start_day, pool_size, "シミュレーション開始",
+                exclude_recent, history_limit)
     save_state(state)
+    timeline = [(start_day, state["story"]["figure_id"],
+                 state["story"]["figure_name"])]
 
     source = ScriptedInput(indices)
     responder = ScriptedResponder(on_change, on_resume)
@@ -574,10 +711,15 @@ def cmd_simulate(days, spec, start_pattern, seed, on_change, on_resume,
         print("=== Day %d (%s) ===" % (i + 1, day.isoformat()))
         state = load_state()          # 毎回ファイルから読み直す
         before = snapshot(state)
+        before_id = (state.get("story") or {}).get("figure_id")
         cont = advance_one_day(state, source, responder, day, threshold,
-                               pool_size)
+                               pool_size, exclude_recent, history_limit,
+                               auto_restart)
         save_state(state)             # 毎回ファイルへ書き戻す
         after = snapshot(state)
+        story = state.get("story") or {}
+        if story.get("figure_id") and story["figure_id"] != before_id:
+            timeline.append((day, story["figure_id"], story["figure_name"]))
         print("       状態: %s → %s" % (before, after))
         if not cont:
             print()
@@ -590,6 +732,65 @@ def cmd_simulate(days, spec, start_pattern, seed, on_change, on_resume,
     print("最終状態")
     print("=" * 78)
     cmd_status(load_state())
+    report_protagonists(timeline, start_day, days, window)
+
+
+def report_protagonists(timeline, start_day, days, window):
+    """主人公の登場履歴と、移動窓ごとの同一人物の登場回数を集計する。
+
+    「同一人物が window 日間に何回主人公になったか」を、開始日をずらした
+    すべての窓について数え、その最大値を見る。基準は1〜2回以内。
+    """
+    print("=" * 78)
+    print("主人公の登場履歴（%d日間で %d マッチ / ユニーク %d人）"
+          % (days, len(timeline), len({t[1] for t in timeline})))
+    print("=" * 78)
+    for when, _fid, name in timeline:
+        print("  %s  %s" % (when.isoformat(), name))
+
+    print()
+    print("=" * 78)
+    print("%d日移動窓での同一人物の登場回数（基準: 1〜2回以内）" % window)
+    print("=" * 78)
+    if not timeline:
+        print("  マッチがありません。")
+        return
+    last = start_day + datetime.timedelta(days=days - 1)
+    if days < window:
+        print("  期間（%d日）が窓（%d日）より短いため、窓での集計はできません。"
+              % (days, window))
+        counts = {}
+        for _when, _fid, name in timeline:
+            counts[name] = counts.get(name, 0) + 1
+        worst = max(counts.values())
+        print("  参考: 期間全体での同一人物の最大登場回数 %d回" % worst)
+        return
+    worst = 0
+    offenders = {}
+    windows = 0
+    begin = start_day
+    while begin + datetime.timedelta(days=window - 1) <= last:
+        end = begin + datetime.timedelta(days=window - 1)
+        counts = {}
+        for when, fid, name in timeline:
+            if begin <= when <= end:
+                counts[name] = counts.get(name, 0) + 1
+        windows += 1
+        for name, n in counts.items():
+            worst = max(worst, n)
+            if n > 2:
+                offenders[name] = max(offenders.get(name, 0), n)
+        begin += datetime.timedelta(days=1)
+    print("  窓の数: %d（%s 〜 %s の各%d日間）"
+          % (windows, start_day.isoformat(), last.isoformat(), window))
+    print("  同一人物の最大登場回数: %d回 → %s"
+          % (worst, "基準達成" if worst <= 2 else "基準超過"))
+    if offenders:
+        print("  3回以上出た人物:")
+        for name, n in sorted(offenders.items(), key=lambda kv: -kv[1]):
+            print("    %-24s %d回" % (name, n))
+    else:
+        print("  3回以上出た人物: なし")
 
 
 def snapshot(state):
@@ -636,6 +837,19 @@ def main():
     parser.add_argument("--pool", type=int, default=DEFAULT_POOL_SIZE,
                         metavar="N",
                         help="マッチングのプール上位N人（既定: %d）" % DEFAULT_POOL_SIZE)
+    parser.add_argument("--exclude-recent", type=int,
+                        default=DEFAULT_EXCLUDE_RECENT, metavar="M",
+                        help="直近M件に登場した人物を新規マッチングから除外する"
+                             "（0で無効。既定: %d）" % DEFAULT_EXCLUDE_RECENT)
+    parser.add_argument("--history-limit", type=int,
+                        default=DEFAULT_HISTORY_LIMIT, metavar="L",
+                        help="story_state.json に残す登場履歴の件数"
+                             "（既定: %d）" % DEFAULT_HISTORY_LIMIT)
+    parser.add_argument("--auto-restart", action="store_true",
+                        help="完走・中止で物語が終わったら翌日から次の物語を"
+                             "自動で開始する（長期シミュレーション用）")
+    parser.add_argument("--window", type=int, default=30, metavar="DAYS",
+                        help="被り集計に使う移動窓の日数（既定: 30）")
     parser.add_argument("--date", type=parse_date, default=None,
                         help="基準日を固定して実行（YYYY-MM-DD、テスト用）")
     args = parser.parse_args()
@@ -644,6 +858,12 @@ def main():
         parser.error("--threshold は 0.0〜1.0 で指定してください")
     if args.pool < 1:
         parser.error("--pool は1以上を指定してください")
+    if args.exclude_recent < 0:
+        parser.error("--exclude-recent は0以上を指定してください")
+    if args.history_limit < 1:
+        parser.error("--history-limit は1以上を指定してください")
+    if args.window < 1:
+        parser.error("--window は1以上を指定してください")
     if not 0 <= args.start_pattern < len(TEST_PATTERNS):
         parser.error("--start-pattern は 0〜%d で指定してください"
                      % (len(TEST_PATTERNS) - 1))
@@ -658,13 +878,15 @@ def main():
     elif args.status:
         cmd_status(load_state())
     elif args.start:
-        cmd_start(day, args.pool)
+        cmd_start(day, args.pool, args.exclude_recent, args.history_limit)
     elif args.advance:
-        cmd_advance(day, args.threshold, args.pool)
+        cmd_advance(day, args.threshold, args.pool, args.exclude_recent,
+                    args.history_limit, args.auto_restart)
     elif args.simulate_days is not None:
         cmd_simulate(args.simulate_days, args.pattern, args.start_pattern,
                      args.seed, args.on_change, args.on_resume, day,
-                     args.threshold, args.pool)
+                     args.threshold, args.pool, args.exclude_recent,
+                     args.history_limit, args.auto_restart, args.window)
     else:
         cmd_status(load_state())
         print("使い方: --start / --advance / --status / --reset / "
