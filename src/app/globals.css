@@ -1,0 +1,481 @@
+:root {
+  --ink: #16202b;
+  --ink-soft: #5a6672;
+  --rule: #c9cfd4;
+  --paper: #edeff1;
+  --card: #fbfbfa;
+
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100dvh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", Meiryo,
+    system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+/* ==========================================================================
+   公開ステータスページ
+   ========================================================================== */
+
+/* 状態ごとの配色。暖色＝対応中／中間色＝休憩中／寒色＝空き。 */
+.statusScreen {
+  --tone-bg: #e6e9ec;
+  --tone-deep: #16202b;
+  --tone-accent: #16202b;
+  --tone-on-deep: #ffffff;
+
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  padding: max(20px, env(safe-area-inset-top)) 16px
+    max(24px, env(safe-area-inset-bottom));
+  background: var(--tone-bg);
+  transition: background-color 0.4s ease;
+}
+
+.statusScreen[data-tone="busy"] {
+  --tone-bg: #fbeae4;
+  --tone-deep: #9c3520;
+  --tone-accent: #b8442c;
+  --tone-on-deep: #fff6f2;
+}
+
+.statusScreen[data-tone="overrun"] {
+  --tone-bg: #fae3d8;
+  --tone-deep: #8a3a10;
+  --tone-accent: #c25a17;
+  --tone-on-deep: #fff5ec;
+}
+
+.statusScreen[data-tone="break"] {
+  --tone-bg: #f6efdc;
+  --tone-deep: #7a5f13;
+  --tone-accent: #97761c;
+  --tone-on-deep: #fffaee;
+}
+
+.statusScreen[data-tone="available"] {
+  --tone-bg: #e0eef0;
+  --tone-deep: #0e5a52;
+  --tone-accent: #14766a;
+  --tone-on-deep: #f2fbf9;
+}
+
+.statusMain {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 22px;
+  text-align: center;
+  padding: 24px 4px;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: var(--tone-deep);
+  color: var(--tone-on-deep);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+.statusDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.statusScreen[data-tone="available"] .statusDot {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.statusHeadline {
+  font-size: clamp(38px, 13vw, 64px);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  color: var(--tone-deep);
+}
+
+.statusDetail {
+  font-size: clamp(19px, 5.4vw, 26px);
+  font-weight: 700;
+  line-height: 1.55;
+  color: var(--tone-accent);
+  max-width: 20ch;
+}
+
+.statusTime {
+  font-variant-numeric: tabular-nums;
+}
+
+.statusFoot {
+  border-top: 1px solid color-mix(in srgb, var(--tone-deep) 22%, transparent);
+  padding-top: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 12.5px;
+  color: color-mix(in srgb, var(--tone-deep) 78%, transparent);
+}
+
+.statusFoot .live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: 0.06em;
+}
+
+.statusFoot .liveDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.statusFoot .liveDot[data-live="true"] {
+  opacity: 1;
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+/* ==========================================================================
+   共通レイアウト（管理画面・エラー画面）
+   ========================================================================== */
+
+.sheet {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 28px 16px max(40px, env(safe-area-inset-bottom));
+}
+
+.sheetHead {
+  border-bottom: 2px solid var(--ink);
+  padding-bottom: 12px;
+  margin-bottom: 22px;
+}
+
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+}
+
+.sheetHead h1 {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.panel {
+  background: var(--card);
+  border: 1px solid var(--rule);
+  padding: 18px 16px;
+}
+
+.panel + .panel {
+  margin-top: 16px;
+}
+
+.panel h2 {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
+  margin-bottom: 14px;
+}
+
+.note {
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.75;
+}
+
+.note + .note {
+  margin-top: 10px;
+}
+
+.note code {
+  font-family: "SFMono-Regular", Consolas, Menlo, monospace;
+  font-size: 12.5px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  padding: 1px 5px;
+}
+
+/* 状態選択ボタン */
+.choices {
+  display: grid;
+  gap: 10px;
+}
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 16px 16px;
+  background: #fff;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.choice:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
+.choice:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.choice .swatch {
+  flex: none;
+  width: 14px;
+  height: 40px;
+}
+
+.choice[data-value="busy"] .swatch {
+  background: #b8442c;
+}
+.choice[data-value="break"] .swatch {
+  background: #97761c;
+}
+.choice[data-value="available"] .swatch {
+  background: #14766a;
+}
+
+.choice .choiceText {
+  display: grid;
+}
+
+.choice .choiceName {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.choice .choiceHint {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.choice[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
+.choice[aria-pressed="true"] .choiceHint {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* 時刻入力 */
+.timeField {
+  margin-top: 16px;
+  padding: 14px 14px 16px;
+  border: 1px dashed var(--ink-soft);
+  background: #fff;
+}
+
+.timeField label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+
+.timeField input[type="time"] {
+  width: 100%;
+  padding: 12px;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--rule);
+  background: #fff;
+  border-radius: 0;
+}
+
+.quick {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.quick button {
+  padding: 9px 2px;
+  font-size: 12.5px;
+  background: #fff;
+  border: 1px solid var(--rule);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.quick button:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.fieldHint {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 9px;
+  line-height: 1.6;
+}
+
+/* ボタン */
+.submit {
+  width: 100%;
+  margin-top: 18px;
+  padding: 16px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: var(--ink);
+  color: #fff;
+  border: 1px solid var(--ink);
+  cursor: pointer;
+}
+
+.submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.linkButton {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.textInput {
+  width: 100%;
+  padding: 13px 12px;
+  font-size: 16px;
+  border: 1px solid var(--rule);
+  background: #fff;
+  border-radius: 0;
+}
+
+:focus-visible {
+  outline: 2px solid #14766a;
+  outline-offset: 1px;
+}
+
+/* 現在の状態サマリー */
+.current {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  margin-bottom: 18px;
+}
+
+.current .currentValue {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.current .currentMeta {
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* トースト */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: max(22px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 20;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 13px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  background: #14483f;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.22);
+  animation: rise 0.22s ease-out;
+}
+
+.toast[data-kind="error"] {
+  background: #8f2d1b;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
