@@ -99,14 +99,24 @@ values (1, 'available')
 on conflict (id) do nothing;
 
 -- ---------------------------------------------------------------------------
--- 4. Realtime 配信を有効化（公開ページの即時反映用）
+-- 4. Realtime 配信を有効化（公開ページの即時反映用・任意）
 -- ---------------------------------------------------------------------------
+-- supabase_realtime は supabase_admin が所有しているため、SQL Editor の
+-- postgres ロールでは "must be owner of publication supabase_realtime" で
+-- 失敗することがある。ここで例外を通すとスクリプト全体がロールバックされ、
+-- 上で作ったテーブルもポリシーも消えてしまうので、必ず握りつぶす。
+--
+-- ここが notice になった場合は、ダッシュボードの
+-- Database > Replication > supabase_realtime から provider_status を
+-- 手動で有効にする。有効にしなくても公開ページは 30 秒ポーリングで動く。
 do $$
 begin
   alter publication supabase_realtime add table public.provider_status;
+  raise notice 'Realtime: provider_status を supabase_realtime に追加しました。';
 exception
-  when duplicate_object then null;
-  when undefined_object then
-    raise notice 'publication supabase_realtime が存在しません。Realtime を使わない場合はそのままで問題ありません。';
+  when duplicate_object then
+    raise notice 'Realtime: provider_status は既に追加済みです。';
+  when others then
+    raise notice 'Realtime: 自動設定をスキップしました（% : %）。ダッシュボードの Database > Replication から provider_status を有効にしてください。有効にしなくても 30 秒ポーリングで動作します。', sqlstate, sqlerrm;
 end;
 $$;
