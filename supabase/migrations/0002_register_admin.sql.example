@@ -1,0 +1,13 @@
+-- 管理者の登録手順
+--
+-- 1. Supabase ダッシュボード > Authentication > Users で
+--    「Add user」から自分のメールアドレスのユーザーを作成する
+--    （Authentication > Providers > Email で "Enable sign ups" は OFF にしておく）。
+-- 2. 下のメールアドレスを自分のものに書き換えて SQL Editor で実行する。
+
+insert into public.provider_admins (user_id, email)
+select id, email from auth.users where email = 'you@example.com'
+on conflict (user_id) do nothing;
+
+-- 登録できたか確認
+select * from public.provider_admins;
